@@ -1,0 +1,6 @@
+services:
+  server:
+    build:
+      dockerfile: Dockerfile
+    ports:
+      - "8087:80"
