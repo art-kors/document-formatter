@@ -15,4 +15,4 @@ RUN $HOME/.local/bin/uv sync
 
 COPY ./main.py ./
 
-CMD $HOME/.local/bin/uv run gunicorn main:app --workers $(nproc) --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:80
+CMD $HOME/.local/bin/uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
