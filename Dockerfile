@@ -1,18 +1,39 @@
-FROM ubuntu:24.04
+FROM alpine:3.20
 
-WORKDIR /project/
+# Устанавливаем системные зависимости для сборки пакетов с C-расширениями
+RUN apk add --no-cache \
+    curl \
+    ca-certificates \
+    libffi-dev \
+    openssl-dev \
+    zlib-dev \
+    gcc \
+    musl-dev \
+    linux-headers \
+    git \
+    jpeg-dev \
+    && update-ca-certificates
 
-RUN apt update
-RUN apt upgrade -y
-RUN apt install -y curl
+# Устанавливаем uv (musl-сборка)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
 
-COPY ./.python-version ./
-RUN $HOME/.local/bin/uv python install
+WORKDIR /app
 
-COPY ./pyproject.toml ./
-RUN $HOME/.local/bin/uv sync
+# Копируем файлы зависимостей
+COPY .python-version ./
+COPY pyproject.toml ./
+COPY uv.lock ./
 
-COPY ./main.py ./
+# Устанавливаем Python и зависимости
+# uv автоматически скачает musl-совместимую сборку Python
+RUN uv python install 3.12
+RUN uv sync --frozen --no-dev  # --no-dev для продакшена
 
-CMD $HOME/.local/bin/uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Копируем приложение
+COPY main.py ./
+
+EXPOSE 8000
+
+# Запуск без --reload (для продакшена)
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
