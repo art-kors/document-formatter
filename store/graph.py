@@ -1,7 +1,6 @@
 import networkx as nx
-from typing import List, Optional
+from typing import List, Optional, Dict
 import json
-
 
 class KnowledgeGraph:
     def __init__(self):
