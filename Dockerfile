@@ -24,6 +24,7 @@ WORKDIR /app
 COPY .python-version ./
 COPY pyproject.toml ./
 COPY uv.lock ./
+COPY templates ./templates
 
 # Устанавливаем Python и зависимости
 # uv автоматически скачает musl-совместимую сборку Python
@@ -32,6 +33,7 @@ RUN uv sync --frozen --no-dev  # --no-dev для продакшена
 
 # Копируем приложение
 COPY main.py ./
+COPY utilities.py ./
 
 EXPOSE 8000
 
