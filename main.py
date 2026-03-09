@@ -1,11 +1,12 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import Body
 from utilities import extract_text
 from pipeline.pipeline import DocumentPipeline
 from core.llm import MistralLLM
 import os
+
 
 app = FastAPI(
     title="Document Processing API",
@@ -106,9 +107,22 @@ async def ask_question(question: str = Body(..., embed=True)):
 
     try:
         answer = current_pipeline.query(question)
-        return {"question": question, "answer": answer}
+        return answer
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/download-graph")
+async def download_graph():
+    """Скачивание файла графа знаний"""
+    file_path = "storage/knowledge_graph.json"
+    if os.path.exists(file_path):
+        return FileResponse(
+            path=file_path,
+            filename="knowledge_graph.json",
+            media_type="application/json"
+        )
+    raise HTTPException(status_code=404, detail="Graph file not found. Process instruction first.")
 
 @app.exception_handler(404)
 async def not_found_handler(request, exc):

@@ -152,37 +152,59 @@
     loading.style.display = 'block';
 
     try {
-        // --- ИЗМЕНЕНИЕ: Отправляем JSON ---
         const response = await fetch('/ask', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: question })
         });
-        // ----------------------------------
 
         if (!response.ok) throw new Error('Ошибка ответа');
 
         const result = await response.json();
-        addMessage(result.answer, 'assistant');
+
+        // Передаем ответ и источники в функцию отрисовки
+        addMessage(result.answer, 'assistant', result.sources);
 
     } catch (error) {
         addMessage("Произошла ошибка при получении ответа.", 'assistant');
     } finally {
         loading.style.display = 'none';
-        chatBox.scrollTop = chatBox.scrollHeight;
     }
 }
 
-    function addMessage(text, sender) {
-        const chatBox = document.getElementById('chat-box');
-        const div = document.createElement('div');
-        div.className = `message ${sender}`;
-        div.innerText = text;
-        chatBox.appendChild(div);
-        chatBox.scrollTop = chatBox.scrollHeight;
+    function addMessage(text, sender, sources = []) {
+    const chatBox = document.getElementById('chat-box');
+    const div = document.createElement('div');
+    div.className = `message ${sender}`;
+
+    // Основной текст ответа
+    div.innerText = text;
+
+    // Если есть источники (RAG), добавляем их под ответом
+    if (sources && sources.length > 0) {
+        const sourcesDiv = document.createElement('div');
+        sourcesDiv.style.marginTop = "10px";
+        sourcesDiv.style.fontSize = "0.85em";
+        sourcesDiv.style.borderTop = "1px dashed #ccc";
+        sourcesDiv.style.paddingTop = "5px";
+        sourcesDiv.innerHTML = "<small><b>📚 Источники (RAG):</b></small>";
+
+        sources.forEach(src => {
+            const item = document.createElement('div');
+            item.style.marginTop = "4px";
+            item.style.background = "#f9f9f9";
+            item.style.padding = "4px";
+            item.style.borderRadius = "4px";
+            item.innerHTML = `<small><i>[${src.type}] ${src.name}</i>: ${src.content}</small>`;
+            sourcesDiv.appendChild(item);
+        });
+
+        div.appendChild(sourcesDiv);
     }
+
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
 </script>
 
 </body>

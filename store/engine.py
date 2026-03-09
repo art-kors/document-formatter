@@ -71,10 +71,25 @@ class GraphRAGEngine:
         # Реальный вызов LLM
         return self.llm.chat(prompt, save_history=False)
 
-    def query(self, question: str) -> str:
+    def query(self, question: str) -> dict:  # Меняем тип возврата на dict
+        """Полный цикл RAG запроса"""
         retrieval_results = self.retrieve(question)
         answer = self.generate_answer(question, retrieval_results['context'])
-        return answer
+
+        # Формируем красивый список источников для UI
+        sources = []
+        for item in retrieval_results['context'][:5]:  # Берем топ-5 источников
+            sources.append({
+                "name": item.get('name', ''),
+                "type": item.get('type', ''),
+                "content": item.get('content', '')[:200] + "..."  # Обрезаем для превью
+            })
+
+        return {
+            "answer": answer,
+            "sources": sources,
+            "graph_entities_count": len(retrieval_results['graph_entities'])
+        }
 
     def get_document_structure(self) -> List[Dict]:
         sections = []
