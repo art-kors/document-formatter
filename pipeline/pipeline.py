@@ -1,52 +1,54 @@
-from entity_extractor import EntityExtractor
-from graph import KnowledgeGraph
-from vector_store import VectorStore
-from engine import GraphRAGEngine
-
-#1. extract rules
-
-#2. applying agents
-
-#3. new doc as a result
+# pipeline.py
+from typing import Dict, List
+from store.entity_extractor import EntityExtractor
+from store.graph import KnowledgeGraph
+from store.vector_store import VectorStore
+from store.engine import GraphRAGEngine
+from core.parsers import simple_text_parser
+from core.llm import MistralLLM
 
 
-def pipeline(doc):
-    # 1. Парсинг документа
-    parsed_doc = ...
+class DocumentPipeline:
+    def __init__(self, llm: MistralLLM):
+        self.llm = llm
+        self.rag_engine = None
+        self.kg = None
 
-    # 2. Извлечение сущностей
-    extractor = EntityExtractor()
-    entities, relations = extractor.extract_from_parsed(parsed_doc)
+    def process_instruction(self, text: str):
+        """Обработка инструкции и построение базы знаний."""
 
-    # 3. Построение графа
-    kg = KnowledgeGraph()
-    kg.build_from_entities(entities, relations)
-    kg.save("knowledge_graph.json")
+        # 1. Парсинг текста
+        parsed_doc = simple_text_parser(text)
 
-    # 4. Векторное индексирование
-    vs = VectorStore()
-    vs.create_collection("document_rules")
-    for entity in entities:
-        vs.add_entity(entity)
+        # 2. Извлечение сущностей
+        extractor = EntityExtractor(llm_client=self.llm)
+        entities, relations = extractor.extract_from_parsed(parsed_doc)
 
-    # 5. Инициализация RAG движка
-    rag = GraphRAGEngine(kg, vs)
+        # 3. Построение графа
+        self.kg = KnowledgeGraph()
+        self.kg.build_from_entities(entities, relations)
 
-    # 6. Примеры запросов
-    questions = [
-        "Как оформлять заголовки?",
-        "Какая структура документа требуется?",
-        "Что должно быть во введении?",
-        "Есть ли требования к списку литературы?"
-    ]
+        # 4. Векторное индексирование
+        vs = VectorStore(llm_client=self.llm)
+        vs.create_collection("document_rules")
+        for entity in entities:
+            vs.add_entity(entity)
 
-    for question in questions:
-        print(f"\n❓ Вопрос: {question}")
-        answer = rag.query(question)
-        print(f"💡 Ответ: {answer}")
+        # 5. Инициализация RAG движка
+        self.rag_engine = GraphRAGEngine(self.kg, vs, self.llm)
 
-    # 7. Получение структуры документа
-    structure = rag.get_document_structure()
-    print("\n📋 Структура документа:")
-    for section in structure:
-        print(f"  {section['order']}. {section['name']}")
+        return {
+            "status": "indexed",
+            "entities_count": len(entities),
+            "relations_count": len(relations)
+        }
+
+    def query(self, question: str) -> str:
+        if not self.rag_engine:
+            return "Ошибка: База знаний не инициализирована."
+        return self.rag_engine.query(question)
+
+    def get_structure(self) -> List[Dict]:
+        if not self.rag_engine:
+            return []
+        return self.rag_engine.get_document_structure()

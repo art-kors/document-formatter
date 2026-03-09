@@ -1,6 +1,7 @@
 services:
   server:
-    build:
-      dockerfile: Dockerfile
+    build: .
     ports:
-      - "8087:80"
+      - "8000:8000"
+    env_file:
+      - .env
