@@ -1,0 +1,45 @@
+﻿{
+  "document_id": "demo_appendix_heading",
+  "standard_id": "gost_7_32_2017",
+  "meta": {
+    "filename": "demo_appendix_heading.docx",
+    "title": "Демо: приложение и заголовки",
+    "language": "ru"
+  },
+  "sections": [
+    {
+      "id": "sec_1",
+      "number": "1",
+      "title": "Основная часть",
+      "level": 1,
+      "text": "В основной части есть ссылка на материалы в конце документа."
+    },
+    {
+      "id": "sec_2",
+      "number": "2",
+      "title": "Выводы.",
+      "level": 1,
+      "text": "Раздел заканчивается точкой в заголовке."
+    },
+    {
+      "id": "sec_app",
+      "number": "",
+      "title": "Приложение Материалы",
+      "level": 1,
+      "text": "В приложении размещены дополнительные диаграммы и таблицы."
+    }
+  ],
+  "paragraphs": [
+    {
+      "id": "p_1",
+      "section_id": "sec_1",
+      "text": "Дополнительные материалы вынесены в конец документа.",
+      "position": {
+        "page": 4,
+        "paragraph_index": 2
+      }
+    }
+  ],
+  "tables": [],
+  "figures": []
+}

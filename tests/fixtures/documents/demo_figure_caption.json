@@ -1,0 +1,40 @@
+﻿{
+  "document_id": "demo_figure_caption",
+  "standard_id": "gost_7_32_2017",
+  "meta": {
+    "filename": "demo_figure_caption.docx",
+    "title": "Демо: рисунок без подписи",
+    "language": "ru"
+  },
+  "sections": [
+    {
+      "id": "sec_1",
+      "number": "1",
+      "title": "Основная часть.",
+      "level": 1,
+      "text": "В разделе описан эксперимент и приведен рисунок с архитектурой."
+    }
+  ],
+  "paragraphs": [
+    {
+      "id": "p_1",
+      "section_id": "sec_1",
+      "text": "На рисунке 1 показана архитектура решения.",
+      "position": {
+        "page": 1,
+        "paragraph_index": 1
+      }
+    }
+  ],
+  "tables": [],
+  "figures": [
+    {
+      "id": "fig_1",
+      "caption": "",
+      "position": {
+        "page": 2,
+        "paragraph_index": null
+      }
+    }
+  ]
+}
