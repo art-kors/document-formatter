@@ -20,12 +20,10 @@ class VectorStore:
         if not self.collection:
             self.create_collection()
 
-        # Генерируем эмбеддинги через LLM клиент
         embeddings = [self.llm.get_embedding(text) for text in texts]
 
         ids = [hashlib.md5(text.encode()).hexdigest() for text in texts]
 
-        # Фильтруем пустые эмбеддинги, если были ошибки
         valid_ids, valid_texts, valid_embeddings, valid_metadatas = [], [], [], []
         for i, emb in enumerate(embeddings):
             if emb:

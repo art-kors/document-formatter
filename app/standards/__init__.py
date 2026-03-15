@@ -1,0 +1,1 @@
+"""Standard ingestion and storage."""

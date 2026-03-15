@@ -48,7 +48,6 @@ class MistralLLM:
             return content
 
         except Exception as e:
-            # Ловим обычное исключение, так как MistralException удален
             return f"Error: {str(e)}"
 
     def stream(self, message: str, save_history: bool = True) -> Generator[str, None, None]:

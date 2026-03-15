@@ -52,7 +52,6 @@ class EntityExtractor:
                 )
                 self.entities.append(entity)
 
-        # Связи: секции идут друг за другом
         section_entities = [e for e in self.entities if e.type == 'section']
         for i in range(len(section_entities) - 1):
             relation = Relation(
