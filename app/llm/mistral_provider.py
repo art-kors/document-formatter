@@ -1,7 +1,5 @@
-import os
+﻿import os
 from typing import Dict, List, Optional
-
-from mistralai import Mistral
 
 from app.llm.base import EmbeddingProvider, LLMProvider
 
@@ -16,6 +14,11 @@ class MistralProvider(LLMProvider, EmbeddingProvider):
         max_tokens: Optional[int] = None,
         system_prompt: Optional[str] = None,
     ):
+        try:
+            from mistralai import Mistral
+        except ImportError as exc:  # pragma: no cover - optional dependency in local mode
+            raise ValueError("mistralai package is not installed") from exc
+
         self.api_key = api_key or os.getenv("MISTRAL_API_KEY")
         if not self.api_key:
             raise ValueError("Mistral API key not found")

@@ -126,7 +126,14 @@ class VectorIndex:
 
     def add_documents(self, texts: List[str], metadatas: List[dict]) -> None:
         embeddings = [self.embedding_provider.embed(text) for text in texts]
-        ids = [hashlib.md5(f"{self.collection_name}:{text}".encode("utf-8")).hexdigest() for text in texts]
+        ids: List[str] = []
+        for idx, text in enumerate(texts):
+            metadata = metadatas[idx] if idx < len(metadatas) else {}
+            entity_id = metadata.get("entity_id")
+            if entity_id:
+                ids.append(f"{self.collection_name}:{entity_id}")
+            else:
+                ids.append(hashlib.md5(f"{self.collection_name}:{idx}:{text}".encode("utf-8")).hexdigest())
 
         valid_ids = []
         valid_texts = []
@@ -182,7 +189,7 @@ class GraphRAGRetriever:
             base_score = max(0.0, (top_k + 1 - rank) / max(top_k, 1))
             self._apply_seed(entity_id, base_score, rule_scores, support_scores)
 
-        matched_object_types = self._match_signal_nodes(query, "object_type", OBJECT_QUERY_HINTS, rule_scores, support_scores, bonus=1.2)
+        matched_object_types = self._match_signal_nodes(query, "object_type", OBJECT_QUERY_HINTS, rule_scores, support_scores, bonus=1.8)
         matched_constraint_types = self._match_signal_nodes(query, "constraint", CONSTRAINT_QUERY_HINTS, rule_scores, support_scores, bonus=1.0)
         matched_keywords = self._match_keyword_nodes(query, rule_scores, support_scores, bonus=0.8)
 

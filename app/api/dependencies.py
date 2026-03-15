@@ -1,3 +1,4 @@
+﻿import os
 from typing import Optional
 
 from app.llm.base import LLMProvider
@@ -15,10 +16,19 @@ _registry: Optional[StandardRegistry] = None
 def get_llm_provider() -> LLMProvider:
     global _llm_provider
     if _llm_provider is None:
-        try:
-            _llm_provider = MistralProvider()
-        except ValueError:
+        mode = os.getenv("MODEL_MODE", "").strip().lower()
+        if mode == "local":
             _llm_provider = LocalProvider()
+        elif mode == "api":
+            _llm_provider = MistralProvider()
+        elif not mode:
+            # Backward-compatible default: use API if configured, otherwise local mode.
+            try:
+                _llm_provider = MistralProvider()
+            except ValueError:
+                _llm_provider = LocalProvider()
+        else:
+            raise ValueError("Unsupported MODEL_MODE. Use 'local' or 'api'.")
     return _llm_provider
 
 
