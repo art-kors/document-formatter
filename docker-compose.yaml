@@ -1,9 +1,11 @@
 services:
-  server:
+  app:
     build: .
+    container_name: document-formatter-app
     ports:
       - "8000:8000"
     env_file:
       - .env
     volumes:
-      - ./storage:/app/storage
+      - ./app/storage:/app/app/storage
+    restart: unless-stopped

@@ -16,6 +16,10 @@ class Summary(BaseModel):
 
 class OrchestratorResult(BaseModel):
     document_id: str
+    standard_id: str = ""
     status: str
     summary: Summary = Field(default_factory=Summary)
     issues: List[Issue] = Field(default_factory=list)
+    agents_run: List[str] = Field(default_factory=list)
+    agents_failed: Dict[str, str] = Field(default_factory=dict)
+    processing_time_ms: int = 0

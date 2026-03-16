@@ -1,10 +1,11 @@
 ﻿import os
 
-from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.dependencies import get_pipeline
 from app.parsing.document_parser import extract_text
+from app.parsing.document_to_schema import parse_text_to_document
 from app.schemas.document import DocumentInput
 
 
@@ -65,6 +66,36 @@ async def analyze_document(document: DocumentInput):
     pipeline = get_pipeline()
     try:
         return pipeline.analyze_document(document)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/analyze-file")
+async def analyze_uploaded_file(
+    document: UploadFile = File(...),
+    standard_id: str = Form(...),
+    document_id: str | None = Form(default=None),
+    include_parsed_document: bool = Form(default=False),
+):
+    pipeline = get_pipeline()
+    try:
+        document_text = extract_text(document)
+        parsed_document = parse_text_to_document(
+            document_text,
+            filename=document.filename or 'uploaded_document',
+            standard_id=standard_id,
+            document_id=document_id,
+        )
+        result = pipeline.analyze_document(parsed_document)
+        if include_parsed_document:
+            payload = result.model_dump()
+            payload["parsed_document"] = parsed_document.model_dump()
+            return JSONResponse(content=payload)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

@@ -193,7 +193,20 @@ class GraphRAGRetriever:
         matched_constraint_types = self._match_signal_nodes(query, "constraint", CONSTRAINT_QUERY_HINTS, rule_scores, support_scores, bonus=1.0)
         matched_keywords = self._match_keyword_nodes(query, rule_scores, support_scores, bonus=0.8)
 
-        ranked_rule_ids = [rule_id for rule_id, _ in sorted(rule_scores.items(), key=lambda item: item[1], reverse=True)[:top_k]]
+        ranked_rule_ids = [
+            rule_id
+            for rule_id, _ in sorted(
+                rule_scores.items(),
+                key=lambda item: self._rule_rank_key(
+                    item[0],
+                    item[1],
+                    matched_object_types,
+                    matched_constraint_types,
+                    matched_keywords,
+                ),
+                reverse=True,
+            )[:top_k]
+        ]
         candidate_rules = [self._build_context_item(rule_id, score=rule_scores[rule_id]) for rule_id in ranked_rule_ids]
 
         support_ids: List[str] = []
@@ -316,6 +329,23 @@ class GraphRAGRetriever:
                     weight = RULE_EDGE_WEIGHTS.get(edge["type"], 1.0)
                     rule_scores[edge["neighbor_id"]] = rule_scores.get(edge["neighbor_id"], 0.0) + bonus * weight
         return matched
+
+    def _rule_rank_key(
+        self,
+        rule_id: str,
+        score: float,
+        matched_object_types: List[str],
+        matched_constraint_types: List[str],
+        matched_keywords: List[str],
+    ) -> tuple:
+        node = self.graph.get_node(rule_id) or {}
+        metadata = node.get("metadata", {}) or {}
+        object_match = 1 if metadata.get("object_type") in matched_object_types else 0
+        constraint_match = 1 if metadata.get("constraint_type") in matched_constraint_types else 0
+        keyword_overlap = 0
+        if matched_keywords:
+            keyword_overlap = len(set(metadata.get("keywords", [])) & set(matched_keywords))
+        return (object_match, constraint_match, keyword_overlap, score)
 
     def _match_keyword_nodes(
         self,

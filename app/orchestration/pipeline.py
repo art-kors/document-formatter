@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional
+from time import perf_counter
+from typing import Dict, List, Optional, Tuple
 
 from app.agents.logic_agent.service import LogicAgentService
 from app.agents.rag_agent.service import GraphRAGService
@@ -7,6 +8,7 @@ from app.agents.style_agent.service import StyleAgentService
 from app.llm.base import LLMProvider
 from app.orchestration.aggregator import build_result, collect_issues
 from app.orchestration.prioritizer import sort_issues
+from app.schemas.agent_result import AgentResult
 from app.schemas.document import DocumentInput
 from app.schemas.orchestrator_result import OrchestratorResult
 from app.standards.registry import StandardRegistry
@@ -38,11 +40,40 @@ class DocumentPipeline:
         return self.rag_service.get_graph_path()
 
     def analyze_document(self, document: DocumentInput) -> OrchestratorResult:
-        results = [
-            self.structure_agent.analyze(document, document.standard_id),
-            self.rag_service.analyze(document, document.standard_id),
-            self.style_agent.analyze(document, document.standard_id),
-            self.logic_agent.analyze(document, document.standard_id),
+        self._validate_standard(document.standard_id)
+
+        started_at = perf_counter()
+        agent_results: List[AgentResult] = []
+        agents_run: List[str] = []
+        agents_failed: Dict[str, str] = {}
+
+        for agent_name, agent in self._get_agents():
+            try:
+                result = agent.analyze(document, document.standard_id)
+                agent_results.append(result)
+                agents_run.append(agent_name)
+            except Exception as exc:
+                agents_failed[agent_name] = str(exc)
+
+        issues = sort_issues(collect_issues(agent_results))
+        elapsed_ms = int((perf_counter() - started_at) * 1000)
+        return build_result(
+            document_id=document.document_id,
+            standard_id=document.standard_id,
+            issues=issues,
+            agents_run=agents_run,
+            agents_failed=agents_failed,
+            processing_time_ms=elapsed_ms,
+        )
+
+    def _get_agents(self) -> List[Tuple[str, object]]:
+        return [
+            (self.structure_agent.agent_name, self.structure_agent),
+            ('rag_agent', self.rag_service),
+            (self.style_agent.agent_name, self.style_agent),
+            (self.logic_agent.agent_name, self.logic_agent),
         ]
-        issues = sort_issues(collect_issues(results))
-        return build_result(document.document_id, issues)
+
+    def _validate_standard(self, standard_id: str) -> None:
+        if not self.registry.get(standard_id):
+            raise FileNotFoundError(f"Unknown standard_id: {standard_id}")
