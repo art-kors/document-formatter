@@ -6,17 +6,24 @@ from app.schemas.issue import Issue
 from app.schemas.orchestrator_result import OrchestratorResult, Summary
 
 
+SEVERITY_PRIORITY = {
+    "critical": 3,
+    "warning": 2,
+    "info": 1,
+}
+
+
 def collect_issues(results: Iterable[AgentResult]) -> List[Issue]:
-    issues: List[Issue] = []
-    seen: set[Tuple] = set()
+    merged: Dict[Tuple, Issue] = {}
     for result in results:
         for issue in result.issues:
             signature = _issue_signature(issue)
-            if signature in seen:
+            current = merged.get(signature)
+            if current is None:
+                merged[signature] = issue
                 continue
-            seen.add(signature)
-            issues.append(issue)
-    return issues
+            merged[signature] = _pick_better_issue(current, issue)
+    return list(merged.values())
 
 
 def build_summary(issues: List[Issue]) -> Summary:
@@ -56,14 +63,27 @@ def build_result(
 
 def _issue_signature(issue: Issue) -> Tuple:
     location = issue.location
+    rule_id = issue.standard_reference.rule_id or ""
     return (
         issue.type,
-        issue.subtype,
-        issue.severity,
-        issue.message,
+        issue.subtype or issue.message,
         location.section_id,
         location.paragraph_id,
         location.page,
-        issue.agent,
-        issue.standard_reference.rule_id,
+        rule_id,
+    )
+
+
+def _pick_better_issue(left: Issue, right: Issue) -> Issue:
+    if _issue_rank(right) > _issue_rank(left):
+        return right
+    return left
+
+
+def _issue_rank(issue: Issue) -> Tuple[int, int, int, int]:
+    return (
+        SEVERITY_PRIORITY.get(issue.severity, 0),
+        1 if issue.suggestion else 0,
+        len(issue.evidence or ""),
+        len(issue.standard_reference.quote or ""),
     )

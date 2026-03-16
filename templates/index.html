@@ -465,7 +465,7 @@
                 </div>
                 <div class="metric">
                     <span class="metric-label">Стандартов</span>
-                    <span class="metric-value" id="hero-standards">0</span>
+                    <span class="metric-value" id="hero-standards">{{ standards|length }}</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Последний статус</span>
@@ -495,7 +495,13 @@
             <div class="field">
                 <label for="standard-select">Стандарт</label>
                 <select id="standard-select">
-                    <option value="">Загрузка списка стандартов...</option>
+                    {% if standards %}
+                        {% for item in standards %}
+                            <option value="{{ item.standard_id }}" {% if loop.first %}selected{% endif %}>{{ item.title }}</option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="">????????? ??????????</option>
+                    {% endif %}
                 </select>
 
                 <label for="document-id">Идентификатор документа</label>
@@ -512,8 +518,11 @@
 
     <section class="panel results" id="results-panel">
         <div>
-            <h2 class="panel-title">Итоговый отчет</h2>
-            <p class="panel-subtitle" id="report-caption">После запуска здесь появятся summary, фильтры и карточки замечаний.</p>
+            <h2 class="panel-title">???????? ?????</h2>
+            <p class="panel-subtitle" id="report-caption">????? ??????? ????? ???????? summary, ??????? ? ???????? ?????????.</p>
+        </div>
+        <div class="filter-row">
+            <button class="btn-primary" id="download-fixed-button" type="button" disabled>????????? ??? ???????????</button>
         </div>
 
         <div class="summary-grid" id="summary-grid"></div>
@@ -531,7 +540,7 @@
 <script>
     const state = {
         documentFile: null,
-        standards: [],
+        standards: {{ standards|tojson }},
         report: null,
         activeType: 'all',
         onlyFixable: false,
@@ -543,6 +552,7 @@
         standardSelect: document.getElementById('standard-select'),
         documentId: document.getElementById('document-id'),
         runButton: document.getElementById('run-button'),
+        downloadFixedButton: document.getElementById('download-fixed-button'),
         statusStrip: document.getElementById('status-strip'),
         resultsPanel: document.getElementById('results-panel'),
         reportCaption: document.getElementById('report-caption'),
@@ -566,6 +576,9 @@
 
     elements.documentInput.addEventListener('change', onDocumentSelected);
     elements.runButton.addEventListener('click', analyzeFile);
+    if (elements.downloadFixedButton) {
+        elements.downloadFixedButton.addEventListener('click', downloadFixedDocument);
+    }
 
     bootstrap();
 
@@ -608,6 +621,53 @@
         }
     }
 
+    async function downloadFixedDocument() {
+        if (!state.report || !state.report.parsed_document || !state.documentFile) {
+            setStatus('??????? ????????? ?????? ?????????.', 'error');
+            return;
+        }
+
+        const outputName = (state.report.document_id || 'corrected_document') + '_fixed.docx';
+        if (elements.downloadFixedButton) {
+            elements.downloadFixedButton.disabled = true;
+        }
+        setStatus('??????????? ??????????? ? ????????? DOCX.', 'loading');
+
+        const formData = new FormData();
+        formData.append('document', state.documentFile);
+        formData.append('parsed_document_json', JSON.stringify(state.report.parsed_document));
+        formData.append('issues_json', JSON.stringify(state.report.issues || []));
+        formData.append('output_filename', outputName);
+
+        try {
+            const response = await fetch('/apply-fixes-file', {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload.detail || '?? ??????? ????????? ??????????? ? ????????? DOCX');
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = outputName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            setStatus('???????????? DOCX ??????????? ? ??????.', 'success');
+        } catch (error) {
+            setStatus(error.message, 'error');
+        } finally {
+            if (elements.downloadFixedButton) {
+                elements.downloadFixedButton.disabled = !state.report?.parsed_document;
+            }
+        }
+    }
+
     async function analyzeFile() {
         if (!state.documentFile) {
             setStatus('Сначала выберите документ для проверки.', 'error');
@@ -644,6 +704,9 @@
             state.report = payload;
             state.activeType = 'all';
             state.onlyFixable = false;
+            if (elements.downloadFixedButton) {
+                elements.downloadFixedButton.disabled = !payload.parsed_document;
+            }
             renderReport();
             setStatus(`Проверка завершена: ${payload.summary.total_issues} замечаний.`, 'success');
             elements.heroStatus.textContent = payload.status;

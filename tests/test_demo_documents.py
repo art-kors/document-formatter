@@ -33,7 +33,7 @@ class DemoDocumentsTests(unittest.TestCase):
     def test_demo_appendix_heading_document(self) -> None:
         result = self.pipeline.analyze_document(self._load('demo_appendix_heading.json'))
         subtypes = [issue.subtype for issue in result.issues]
-        self.assertIn('invalid_appendix_heading', subtypes)
+        self.assertIn('missing_appendix_reference', subtypes)
         self.assertIn('heading_trailing_period', subtypes)
 
     def _load(self, filename: str) -> DocumentInput:

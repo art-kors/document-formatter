@@ -205,7 +205,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
         result = analyze_document_against_standard(document, self.standard_id)
         self.assertIn("missing_section_number", [issue.subtype for issue in result.issues])
 
-    def test_invalid_appendix_heading_creates_issue(self) -> None:
+    def test_appendix_heading_without_letter_is_not_flagged_as_invalid(self) -> None:
         document = DocumentInput(
             document_id="doc_appendix",
             standard_id=self.standard_id,
@@ -215,7 +215,103 @@ class GraphRAGCheckerTests(unittest.TestCase):
         )
 
         result = analyze_document_against_standard(document, self.standard_id)
-        self.assertIn("invalid_appendix_heading", [issue.subtype for issue in result.issues])
+        self.assertNotIn("invalid_appendix_heading", [issue.subtype for issue in result.issues])
+
+    def test_docx_front_matter_checks_create_title_and_contents_issues(self) -> None:
+        document = DocumentInput(
+            document_id="doc_front_matter",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "1 ????????", "alignment": "left", "style": "Normal"},
+                        {"paragraph_index": 2, "text": "????? ???????", "alignment": "left", "style": "Normal"},
+                        {"paragraph_index": 3, "text": "2 ???????? ?????", "alignment": "left", "style": "Normal"},
+                    ],
+                },
+            ),
+            sections=[
+                Section(id="sec_1", number="1", title="????????", text="?????"),
+                Section(id="sec_2", number="2", title="???????? ?????", text="?????"),
+            ],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="?????", position=Position(page=1, paragraph_index=1))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertIn("missing_title_page", subtypes)
+        self.assertIn("missing_contents_section", subtypes)
+
+    def test_figure_caption_trailing_period_creates_issue(self) -> None:
+        document = DocumentInput(
+            document_id="doc_figure_period",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(filename="report.docx", title="Report"),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="??? ???????? ?? ??????? 1, ????? ????????.", position=Position(page=1, paragraph_index=1))],
+            figures=[FigureItem(id="fig_1", caption="??????? 1 - ??????????? ???????.", position=Position(page=2, paragraph_index=2))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertIn("figure_caption_trailing_period", [issue.subtype for issue in result.issues])
+
+    def test_figure_caption_alignment_creates_issue_for_non_centered_docx_caption(self) -> None:
+        document = DocumentInput(
+            document_id="doc_figure_alignment",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "? ?????? ???????? ??????? 1.", "alignment": "justify", "style": "Normal"},
+                        {"paragraph_index": 2, "text": "??????? 1 - ??????????? ???????", "alignment": "left", "style": "Normal"},
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="? ?????? ???????? ??????? 1.", position=Position(page=1, paragraph_index=1))],
+            figures=[FigureItem(id="fig_1", caption="??????? 1 - ??????????? ???????", position=Position(page=1, paragraph_index=2))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertIn("figure_caption_not_centered", [issue.subtype for issue in result.issues])
+
+    def test_missing_figure_reference_before_caption_creates_issue(self) -> None:
+        document = DocumentInput(
+            document_id="doc_figure_reference_order",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(filename="report.docx", title="Report"),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="???????? ??????????? ??? ?????? ?? ???????.", position=Position(page=1, paragraph_index=1))],
+            figures=[FigureItem(id="fig_1", caption="??????? 1 - ??????????? ???????", position=Position(page=1, paragraph_index=2))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertIn("missing_figure_reference", [issue.subtype for issue in result.issues])
+
+    def test_figure_numbering_sequence_creates_issue(self) -> None:
+        document = DocumentInput(
+            document_id="doc_figure_numbering",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(filename="report.docx", title="Report"),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[
+                Paragraph(id="p_1", section_id="sec_1", text="??? ???????? ?? ??????? 1.", position=Position(page=1, paragraph_index=1)),
+                Paragraph(id="p_2", section_id="sec_1", text="??? ???????? ?? ??????? 3.", position=Position(page=2, paragraph_index=3)),
+            ],
+            figures=[
+                FigureItem(id="fig_1", caption="??????? 1 - ????? ???????", position=Position(page=1, paragraph_index=2)),
+                FigureItem(id="fig_2", caption="??????? 3 - ????????? ??????", position=Position(page=2, paragraph_index=4)),
+            ],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertIn("figure_numbering_error", [issue.subtype for issue in result.issues])
 
 
 if __name__ == "__main__":

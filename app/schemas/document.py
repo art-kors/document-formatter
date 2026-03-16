@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -7,6 +7,7 @@ class DocumentMeta(BaseModel):
     filename: str = ""
     title: str = ""
     language: str = "ru"
+    extras: Dict[str, Any] = Field(default_factory=dict)
 
 
 class Position(BaseModel):

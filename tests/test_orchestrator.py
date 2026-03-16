@@ -107,6 +107,19 @@ class DocumentPipelineTests(unittest.TestCase):
 
         self.assertEqual(len(issues), 1)
 
+    def test_collect_issues_merges_near_duplicates_from_different_agents(self) -> None:
+        issue = _build_issue("issue_rag_001")
+        duplicate = issue.model_copy(update={"id": "issue_structure_001", "agent": "structure_agent", "severity": "critical"})
+        results = [
+            AgentResult(agent="rag_agent", issues=[issue]),
+            AgentResult(agent="structure_agent", issues=[duplicate]),
+        ]
+
+        issues = collect_issues(results)
+
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].severity, "critical")
+
 
 if __name__ == "__main__":
     unittest.main()
