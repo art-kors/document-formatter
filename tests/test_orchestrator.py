@@ -123,3 +123,11 @@ class DocumentPipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StandardRegistryTests(unittest.TestCase):
+    def test_register_uploaded_standard_generates_ascii_id_for_cyrillic_name(self) -> None:
+        registry = StandardRegistry()
+        standard_id = registry.register_uploaded_standard('???? 2.105-2019.pdf')
+        self.assertTrue(all(ord(ch) < 128 for ch in standard_id))
+        self.assertNotEqual(standard_id, '')

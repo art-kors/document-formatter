@@ -36,6 +36,25 @@ class DocumentToSchemaTests(unittest.TestCase):
         self.assertEqual(document.figures[0].caption, "\u0420\u0438\u0441\u0443\u043d\u043e\u043a 1 - \u0410\u0440\u0445\u0438\u0442\u0435\u043a\u0442\u0443\u0440\u0430 \u0441\u0438\u0441\u0442\u0435\u043c\u044b")
         self.assertEqual(document.tables[0].caption, "\u0422\u0430\u0431\u043b\u0438\u0446\u0430 1 - \u0421\u0440\u0430\u0432\u043d\u0435\u043d\u0438\u0435 \u043c\u0435\u0442\u043e\u0434\u043e\u0432")
 
+    def test_parse_text_to_document_extracts_abbreviated_figure_caption(self) -> None:
+        text = (
+            "1 \u0412\u0432\u0435\u0434\u0435\u043d\u0438\u0435\n\n"
+            "\u0420\u0438\u0441. 1 \u0410\u0440\u0445\u0438\u0442\u0435\u043a\u0442\u0443\u0440\u0430 \u0441\u0438\u0441\u0442\u0435\u043c\u044b\n\n"
+            "\u0420\u0438\u0441 2 - \u0421\u0445\u0435\u043c\u0430 \u043c\u043e\u0434\u0443\u043b\u044f"
+        )
+
+        document = parse_text_to_document(
+            text,
+            filename="report.txt",
+            standard_id="gost_7_32_2017",
+            document_id="doc_abbrev_figures",
+        )
+
+        self.assertEqual(len(document.figures), 2)
+        self.assertEqual(document.figures[0].caption, "\u0420\u0438\u0441. 1 \u0410\u0440\u0445\u0438\u0442\u0435\u043a\u0442\u0443\u0440\u0430 \u0441\u0438\u0441\u0442\u0435\u043c\u044b")
+        self.assertEqual(document.figures[1].caption, "\u0420\u0438\u0441 2 - \u0421\u0445\u0435\u043c\u0430 \u043c\u043e\u0434\u0443\u043b\u044f")
+
+
     def test_parse_text_to_document_does_not_create_fake_untitled_section(self) -> None:
         text = (
             "\u0422\u0435\u043a\u0441\u0442 \u0442\u0438\u0442\u0443\u043b\u044c\u043d\u043e\u0433\u043e \u0431\u043b\u043e\u043a\u0430\n\n"

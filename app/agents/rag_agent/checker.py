@@ -21,6 +21,7 @@ APPENDIX_WORD = _u("\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435
 GOST_NAME = _u("\u0413\u041e\u0421\u0422 7.32-2017")
 
 FIGURE_CAPTION_PATTERN = re.compile(f"^{FIGURE_WORD}\\s+[A-Za-z\u0410-\u042f\u0430-\u044f0-9.]+\\s*-\\s*.+$")
+FIGURE_DETECTION_PATTERN = re.compile(r'^(?:\u0420\u0438\u0441\u0443\u043d\u043e\u043a|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$', re.IGNORECASE)
 TABLE_CAPTION_PATTERN = re.compile(f"^{TABLE_WORD}\\s+[A-Za-z\u0410-\u042f\u0430-\u044f0-9.]+\\s*-\\s*.+$")
 APPENDIX_TITLE_PATTERN = re.compile(f"^{APPENDIX_WORD}(?:\\s+[\u0410-\u042fA-Z])?(?:\\s*[-\u2013]\\s*.+|\\s+.+)?$")
 REFERENCE_SECTION_HINTS = [
@@ -61,7 +62,7 @@ def _check_figures(document: DocumentInput, parsed_standard: ParsedStandard, sta
         caption = normalize_whitespace(figure.caption)
         figure_number = _extract_number_from_caption(caption)
         observed_numbers.append((figure, figure_number))
-        location = IssueLocation(page=figure.position.page)
+        location = IssueLocation(page=figure.position.page, paragraph_id=figure.id)
 
         if not caption:
             issues.append(_build_issue('formatting', 'missing_figure_caption', 'warning', _u("\u0423 \u0440\u0438\u0441\u0443\u043d\u043a\u0430 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043f\u043e\u0434\u043f\u0438\u0441\u044c"), f"{FIGURE_WORD} {figure.id} " + _u("\u043d\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u043f\u043e\u0434\u043f\u0438\u0441\u044c \u0432 \u0444\u043e\u0440\u043c\u0430\u0442\u0435 '") + f"{FIGURE_WORD} N - " + _u("\u041d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435'."), location, _build_standard_reference(standard_id, caption_rule), _u("\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043f\u043e\u0434\u043f\u0438\u0441\u044c \u0432\u0438\u0434\u0430: ") + f"{FIGURE_WORD} 1 - " + _u("\u041d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435 \u0440\u0438\u0441\u0443\u043d\u043a\u0430")))
@@ -93,11 +94,11 @@ def _check_figure_numbering_sequence(observed_numbers: List[Tuple[FigureItem, Op
         if number is None:
             continue
         if number in seen:
-            issues.append(_build_issue('formatting', 'figure_numbering_error', 'warning', _u("\u041d\u0430\u0440\u0443\u0448\u0435\u043d\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u0438 \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432"), _u("\u041d\u043e\u043c\u0435\u0440 \u0440\u0438\u0441\u0443\u043d\u043a\u0430 ") + number + _u(" \u043f\u043e\u0432\u0442\u043e\u0440\u044f\u0435\u0442\u0441\u044f \u0432 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0435."), IssueLocation(page=figure.position.page), _build_standard_reference(standard_id, numbering_rule), _u("\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u044e \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432")))
+            issues.append(_build_issue('formatting', 'figure_numbering_error', 'warning', _u("\u041d\u0430\u0440\u0443\u0448\u0435\u043d\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u0438 \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432"), _u("\u041d\u043e\u043c\u0435\u0440 \u0440\u0438\u0441\u0443\u043d\u043a\u0430 ") + number + _u(" \u043f\u043e\u0432\u0442\u043e\u0440\u044f\u0435\u0442\u0441\u044f \u0432 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0435."), IssueLocation(page=figure.position.page, paragraph_id=figure.id), _build_standard_reference(standard_id, numbering_rule), _u("\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u044e \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432")))
             continue
         seen.add(number)
         if number != str(expected):
-            issues.append(_build_issue('formatting', 'figure_numbering_error', 'warning', _u("\u041d\u0430\u0440\u0443\u0448\u0435\u043d\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u0438 \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432"), _u("\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d \u0440\u0438\u0441\u0443\u043d\u043e\u043a ") + number + _u(", \u043e\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044f \u0440\u0438\u0441\u0443\u043d\u043e\u043a ") + str(expected) + '.', IssueLocation(page=figure.position.page), _build_standard_reference(standard_id, numbering_rule), _u("\u0412\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043f\u043e\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u0443\u044e \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u044e \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432")))
+            issues.append(_build_issue('formatting', 'figure_numbering_error', 'warning', _u("\u041d\u0430\u0440\u0443\u0448\u0435\u043d\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u0438 \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432"), _u("\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d \u0440\u0438\u0441\u0443\u043d\u043e\u043a ") + number + _u(", \u043e\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044f \u0440\u0438\u0441\u0443\u043d\u043e\u043a ") + str(expected) + '.', IssueLocation(page=figure.position.page, paragraph_id=figure.id), _build_standard_reference(standard_id, numbering_rule), _u("\u0412\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u043f\u043e\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u0443\u044e \u043d\u0443\u043c\u0435\u0440\u0430\u0446\u0438\u044e \u0440\u0438\u0441\u0443\u043d\u043a\u043e\u0432")))
             expected = _safe_int(number, expected) + 1
         else:
             expected += 1
@@ -110,7 +111,7 @@ def _check_tables(document: DocumentInput, parsed_standard: ParsedStandard, stan
     reference_rule = _pick_rule(parsed_standard.rules, object_type='table', constraint_type='reference_required')
     for table in document.tables:
         caption = normalize_whitespace(table.caption)
-        location = IssueLocation(page=table.position.page)
+        location = IssueLocation(page=table.position.page, paragraph_id=table.id)
         if not caption:
             issues.append(_build_issue('formatting', 'missing_table_caption', 'warning', _u("\u0423 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435"), f"{TABLE_WORD} {table.id} " + _u("\u043d\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0441\u0442\u0440\u043e\u043a\u0443 \u0432\u0438\u0434\u0430 '") + f"{TABLE_WORD} N - " + _u("\u041d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b'."), location, _build_standard_reference(standard_id, caption_rule), _u("\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b")))
             continue
@@ -256,21 +257,32 @@ def _safe_int(value: str, default: int) -> int:
 def _has_figure_reference_before(document: DocumentInput, figure: FigureItem) -> bool:
     number = _extract_number_from_caption(normalize_whitespace(figure.caption))
     if figure.position.paragraph_index is None:
-        return _document_has_reference(document, [FIGURE_WORD.lower(), figure.caption])
+        return _document_has_reference(
+            document,
+            [FIGURE_WORD.lower(), 'рис.', 'рис', figure.caption],
+        )
+
     candidates = [
         paragraph
         for paragraph in document.paragraphs
-        if paragraph.position.paragraph_index is not None and paragraph.position.paragraph_index < figure.position.paragraph_index
+        if paragraph.position.paragraph_index is not None
+        and paragraph.position.paragraph_index < figure.position.paragraph_index
     ]
     haystack = normalize_whitespace(' '.join(paragraph.text for paragraph in candidates)).lower()
     if not haystack:
         return False
+
     if number:
-        figure_in = _u(r'\u0440\u0438\u0441\u0443\u043d\u043a\u0435')
-        figure_gen = _u(r'\u0440\u0438\u0441\u0443\u043d\u043a\u0430')
-        if any(token in haystack for token in [f"{FIGURE_WORD.lower()} {number}", f"{figure_in} {number}", f"{figure_gen} {number}"]):
+        figure_ref_pattern = re.compile(
+            rf'\b(?:{re.escape(FIGURE_WORD.lower())}|рис\.?|рисунка|рисунке)\s*{re.escape(str(number))}\b',
+            re.IGNORECASE,
+        )
+        if figure_ref_pattern.search(haystack):
             return True
-    return FIGURE_WORD.lower() in haystack and (number is None or str(number) in haystack)
+
+    return any(
+        token in haystack for token in [FIGURE_WORD.lower(), 'рис.', 'рис']
+    ) and (number is None or str(number) in haystack)
 
 
 def _build_issue(issue_type: str, subtype: str, severity: str, message: str, evidence: str, location: IssueLocation, standard_reference: StandardReference, suggestion: Optional[str]) -> Issue:

@@ -156,12 +156,13 @@ class AnalyzeFileApiTests(unittest.TestCase):
             data={
                 'parsed_document_json': json.dumps(payload['parsed_document'], ensure_ascii=False),
                 'issues_json': json.dumps(payload['issues'], ensure_ascii=False),
-                'output_filename': 'applied_fix.docx',
+                'output_filename': '\u041f\u0440\u0438\u043c\u0435\u043d\u0435\u043d\u043d\u044b\u0439_\u043e\u0442\u0447\u0435\u0442.docx',
             },
         )
 
         self.assertEqual(fix_response.status_code, 200)
-        self.assertIn('applied_fix.docx', fix_response.headers['content-disposition'])
+        self.assertIn("filename*=UTF-8''", fix_response.headers['content-disposition'])
+        self.assertIn('filename="', fix_response.headers['content-disposition'])
         self.assertTrue(fix_response.content.startswith(b'PK'))
 
     def test_fix_document_endpoint_returns_docx(self) -> None:
@@ -175,7 +176,7 @@ class AnalyzeFileApiTests(unittest.TestCase):
             json={
                 'document': document.model_dump(),
                 'issues': [issue.model_dump(mode='json') for issue in result.issues],
-                'output_filename': 'fixed_demo.docx',
+                'output_filename': '\u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043d\u044b\u0439_\u043e\u0442\u0447\u0435\u0442.docx',
             },
         )
 
@@ -184,7 +185,8 @@ class AnalyzeFileApiTests(unittest.TestCase):
             response.headers['content-type'],
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
-        self.assertIn('fixed_demo.docx', response.headers['content-disposition'])
+        self.assertIn("filename*=UTF-8''", response.headers['content-disposition'])
+        self.assertIn('filename="', response.headers['content-disposition'])
         self.assertTrue(response.content.startswith(b'PK'))
 
 

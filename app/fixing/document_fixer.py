@@ -1,4 +1,4 @@
-﻿import copy
+import copy
 import html
 import re
 import zipfile
@@ -9,7 +9,10 @@ from app.schemas.document import DocumentInput, Paragraph, Position, Section
 from app.schemas.issue import Issue, SuggestedFix
 
 
-FIGURE_CAPTION_RE = re.compile(r"^Рисунок\s+(?P<number>\d+)\s*[—-]?\s*(?P<title>.*)$", re.IGNORECASE)
+FIGURE_CAPTION_RE = re.compile(
+    r"^(?:Рисунок|Рис\.?|рис\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[—–-]?\s*(?P<title>.*)$",
+    re.IGNORECASE,
+)
 TABLE_CAPTION_RE = re.compile(r"^Таблица\s+(?P<number>\d+)\s*[—-]?\s*(?P<title>.*)$", re.IGNORECASE)
 APPENDIX_RE = re.compile(r"^Приложение\s+([А-ЯA-Z])(?:\s*[—-]?\s*(.*))?$", re.IGNORECASE)
 
@@ -109,9 +112,12 @@ def _apply_rag_fixes(
         if section.title.endswith('.'):
             section.title = section.title.rstrip('.').strip()
 
+    renumber_figures = any(issue.subtype == 'figure_numbering_error' for issue in issues)
     for index, figure in enumerate(document.figures, start=1):
-        number = _extract_number(index, figure.caption, FIGURE_CAPTION_RE)
-        title = _extract_title(figure.caption, f'Иллюстрация {number}', FIGURE_CAPTION_RE)
+        if not (figure.caption or '').strip():
+            continue
+        number = index if renumber_figures else _extract_number(index, figure.caption, FIGURE_CAPTION_RE)
+        title = _extract_title(figure.caption, f'Иллюстрация {number}', FIGURE_CAPTION_RE).rstrip('.').strip()
         figure.caption = f'Рисунок {number} - {title}'
 
     for index, table in enumerate(document.tables, start=1):
@@ -151,7 +157,8 @@ def _replace_or_assign(source: str, before: str, after: str) -> str:
 
 
 def _renumber_sections(document: DocumentInput) -> None:
-    counters: Dict[tuple, int] = {}
+    counters: List[int] = []
+
     for section in document.sections:
         normalized_title = section.title.lower().strip()
         if normalized_title.startswith('приложение'):
@@ -159,26 +166,24 @@ def _renumber_sections(document: DocumentInput) -> None:
             section.level = 1
             continue
 
-        if section.level <= 1:
-            parent = tuple()
-        else:
-            parent = tuple(int(part) for part in section.number.split('.')[:-1] if part.isdigit()) if section.number else tuple()
-            if len(parent) != section.level - 1:
-                parent = tuple()
+        level = max(1, int(section.level or 1))
+        if level > len(counters) + 1:
+            level = len(counters) + 1
 
-        if section.level == 1:
-            counters[tuple()] = counters.get(tuple(), 0) + 1
-            section.number = str(counters[tuple()])
+        if len(counters) < level:
+            counters.extend([0] * (level - len(counters)))
         else:
-            if parent and parent not in counters:
-                parent = tuple()
-            counters[parent] = counters.get(parent, 0) + 1
-            prefix = '.'.join(str(part) for part in parent)
-            section.number = f'{prefix}.{counters[parent]}' if prefix else str(counters[parent])
+            counters = counters[:level]
 
-        if section.number:
-            current_tuple = tuple(int(part) for part in section.number.split('.') if part.isdigit())
-            counters.setdefault(current_tuple, 0)
+        while level > 1 and counters[level - 2] == 0:
+            level -= 1
+            counters = counters[:level]
+            if len(counters) < level:
+                counters.extend([0] * (level - len(counters)))
+
+        counters[level - 1] += 1
+        section.level = level
+        section.number = '.'.join(str(part) for part in counters[:level])
 
 
 def _append_required_section(document: DocumentInput, title: str, body: str = 'Заполните содержимое раздела.') -> None:

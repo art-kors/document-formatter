@@ -1,5 +1,6 @@
 ﻿import json
 import os
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -158,7 +159,7 @@ async def apply_fixes_file(
         filename = output_filename or f"{parsed_document.document_id}_fixed.docx"
         if not filename.lower().endswith('.docx'):
             filename = f"{filename}.docx"
-        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers = _attachment_headers(filename)
         return Response(
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -178,7 +179,7 @@ async def fix_document(request: FixDocumentRequest):
         filename = request.output_filename or "corrected_document.docx"
         if not filename.lower().endswith(".docx"):
             filename = f"{filename}.docx"
-        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers = _attachment_headers(filename)
         return Response(
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -186,6 +187,14 @@ async def fix_document(request: FixDocumentRequest):
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def _attachment_headers(filename: str) -> dict[str, str]:
+    safe_ascii = ''.join(ch if ord(ch) < 128 else '_' for ch in filename)
+    quoted = quote(filename.encode('utf-8'))
+    return {
+        'Content-Disposition': f"attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{quoted}",
+    }
 
 
 @router.get("/download-graph")

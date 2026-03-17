@@ -8,19 +8,22 @@ from app.schemas.document import DocumentInput, DocumentMeta, FigureItem, Paragr
 
 SECTION_PATTERN = re.compile(r'^(?P<number>\d+(?:\.\d+)*)\s+(?P<title>[^\n]{1,200})$')
 APPENDIX_PATTERN = re.compile('^(?:\u041f\u0420\u0418\u041b\u041e\u0416\u0415\u041d\u0418\u0415|\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435)\\s+(?P<number>[A-Z\u0410-\u042f\u0401])(?:\\s*[\u2013-]?\\s*(?P<title>.*))?$')
-FIGURE_PATTERN = re.compile('^\u0420\u0438\u0441\u0443\u043d\u043e\u043a\\s+(?P<number>\\d+)\\s*[\u2013-]?\\s*(?P<title>.*)$', re.IGNORECASE)
+FIGURE_PATTERN = re.compile(
+    '^(?:\u0420\u0438\u0441\u0443\u043d\u043e\u043a|\u0420\u0438\u0441\\.?|\u0440\u0438\u0441\\.?)\\s*(?P<number>\\d+(?:\\.\\d+)*)\\s*[\u2014\u2013-]?\\s*(?P<title>.*)$',
+    re.IGNORECASE,
+)
 TABLE_PATTERN = re.compile('^\u0422\u0430\u0431\u043b\u0438\u0446\u0430\\s+(?P<number>\\d+)\\s*[\u2013-]?\\s*(?P<title>.*)$', re.IGNORECASE)
 _HEADING_STYLE_HINTS = ('heading', '\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043e\u043a')
 
 _CANONICAL_UNNUMBERED_HEADINGS = {
-    '????????',
-    '??????????',
-    '??????????',
-    '??????????',
-    '???????',
-    '?????? ?????????????? ??????????',
-    '?????? ??????????',
-    '????????????????? ??????',
+    '\u0432\u0432\u0435\u0434\u0435\u043d\u0438\u0435',
+    '\u0437\u0430\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435',
+    '\u0441\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435',
+    '\u043e\u0433\u043b\u0430\u0432\u043b\u0435\u043d\u0438\u0435',
+    '\u0440\u0435\u0444\u0435\u0440\u0430\u0442',
+    '\u0441\u043f\u0438\u0441\u043e\u043a \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u043d\u044b\u0445 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432',
+    '\u0441\u043f\u0438\u0441\u043e\u043a \u043b\u0438\u0442\u0435\u0440\u0430\u0442\u0443\u0440\u044b',
+    '\u0431\u0438\u0431\u043b\u0438\u043e\u0433\u0440\u0430\u0444\u0438\u044f',
 }
 
 
@@ -100,6 +103,7 @@ def parse_docx_to_document(
     figures: List[FigureItem] = []
     tables: List[TableItem] = []
     paragraph_meta: List[Dict[str, Any]] = []
+    section_heading_meta: Dict[str, Dict[str, Any]] = {}
     current_section: Optional[Section] = None
 
     for index, paragraph in enumerate(doc.paragraphs, start=1):
@@ -157,6 +161,7 @@ def parse_docx_to_document(
     extras = {
         'source_format': 'docx',
         'docx_paragraphs': paragraph_meta,
+        'section_headings': section_heading_meta,
         'has_tables': bool(doc.tables),
         'inline_shapes_count': len(getattr(doc, 'inline_shapes', [])),
     }
