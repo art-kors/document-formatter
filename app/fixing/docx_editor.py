@@ -2,6 +2,8 @@
 import re
 from typing import Iterable, List, Optional
 
+from docx.shared import Mm, Pt, RGBColor
+
 from app.fixing.document_fixer import apply_fixes
 from app.schemas.document import DocumentInput
 from app.schemas.issue import Issue
@@ -51,8 +53,9 @@ def apply_fixes_to_source_docx(file_bytes: bytes, document: DocumentInput, issue
             if paragraph is not None and not _paragraph_contains_drawing(paragraph):
                 _replace_paragraph_text(paragraph, new_heading)
 
-    # 2b. Apply paragraph-level layout fixes before text replacements.
+    # 2b. Apply paragraph-level layout and typography fixes before text replacements.
     _apply_alignment_fixes(source, document, issues)
+    _apply_typography_and_margin_fixes(source, document, issues)
 
     # 3. Update captions that already exist in the document.
     for old_item, new_item in zip(document.figures, fixed.figures):
@@ -125,6 +128,162 @@ def _missing_captions(original: DocumentInput, fixed: DocumentInput) -> List[str
         if not old_item.caption and new_item.caption:
             captions.append(new_item.caption)
     return captions
+
+
+
+def _apply_typography_and_margin_fixes(source_doc, parsed_document: DocumentInput, issues: List[Issue]) -> None:
+    page_size_fix_needed = any(issue.subtype == 'invalid_page_size' for issue in issues)
+    if page_size_fix_needed:
+        for section in getattr(source_doc, 'sections', []):
+            width_mm = float(getattr(section.page_width, 'mm', 0) or 0)
+            height_mm = float(getattr(section.page_height, 'mm', 0) or 0)
+            if width_mm > height_mm:
+                section.page_width = Mm(297)
+                section.page_height = Mm(210)
+            else:
+                section.page_width = Mm(210)
+                section.page_height = Mm(297)
+
+    margin_fix_needed = any(issue.subtype == 'invalid_page_margins' for issue in issues)
+    if margin_fix_needed:
+        for section in getattr(source_doc, 'sections', []):
+            section.left_margin = Mm(30)
+            section.right_margin = Mm(15)
+            section.top_margin = Mm(20)
+            section.bottom_margin = Mm(20)
+
+    typography_issue_types = {
+        'invalid_first_line_indent',
+        'invalid_line_spacing',
+        'invalid_font_size',
+        'invalid_font_family',
+        'invalid_font_color',
+        'unexpected_bold_text',
+        'heading_not_centered',
+        'heading_has_indent',
+        'heading_invalid_font_color',
+    }
+    triggered_typography_fixes = {issue.subtype for issue in issues if issue.subtype in typography_issue_types}
+    if not triggered_typography_fixes:
+        return
+
+    body_font_fix_types = {'invalid_font_size', 'invalid_font_family', 'invalid_font_color', 'unexpected_bold_text'}
+    heading_font_fix_types = {'invalid_font_size', 'invalid_font_family', 'invalid_font_color', 'heading_invalid_font_color'}
+
+    for paragraph in _collect_body_paragraphs_for_typography_fix(source_doc, parsed_document):
+        if _paragraph_contains_drawing(paragraph):
+            continue
+        if 'invalid_first_line_indent' in triggered_typography_fixes:
+            paragraph.paragraph_format.first_line_indent = Mm(12.5)
+        if 'invalid_line_spacing' in triggered_typography_fixes:
+            paragraph.paragraph_format.line_spacing = 1.5
+        if any(subtype in triggered_typography_fixes for subtype in body_font_fix_types):
+            for run in paragraph.runs:
+                if not ''.join(run.text.split()):
+                    continue
+                if 'invalid_font_size' in triggered_typography_fixes:
+                    run.font.size = Pt(12)
+                if 'invalid_font_family' in triggered_typography_fixes:
+                    run.font.name = 'Times New Roman'
+                if 'invalid_font_color' in triggered_typography_fixes:
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+                if 'unexpected_bold_text' in triggered_typography_fixes:
+                    run.font.bold = False
+
+    for paragraph in _collect_heading_paragraphs_for_typography_fix(source_doc, parsed_document):
+        if _paragraph_contains_drawing(paragraph):
+            continue
+        if 'heading_not_centered' in triggered_typography_fixes:
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if 'heading_has_indent' in triggered_typography_fixes:
+            paragraph.paragraph_format.first_line_indent = Mm(0)
+            paragraph.paragraph_format.left_indent = Mm(0)
+            paragraph.paragraph_format.right_indent = Mm(0)
+        if any(subtype in triggered_typography_fixes for subtype in heading_font_fix_types):
+            style = getattr(paragraph, 'style', None)
+            if style is not None:
+                if 'invalid_font_size' in triggered_typography_fixes:
+                    style.font.size = Pt(12)
+                if 'invalid_font_family' in triggered_typography_fixes:
+                    style.font.name = 'Times New Roman'
+                if 'invalid_font_color' in triggered_typography_fixes or 'heading_invalid_font_color' in triggered_typography_fixes:
+                    style.font.color.rgb = RGBColor(0, 0, 0)
+            for run in paragraph.runs:
+                if not ''.join(run.text.split()):
+                    continue
+                if 'invalid_font_size' in triggered_typography_fixes:
+                    run.font.size = Pt(12)
+                if 'invalid_font_family' in triggered_typography_fixes:
+                    run.font.name = 'Times New Roman'
+                if 'invalid_font_color' in triggered_typography_fixes or 'heading_invalid_font_color' in triggered_typography_fixes:
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+
+
+def _find_paragraph_for_issue(source_doc, parsed_document: DocumentInput, issue: Issue):
+    paragraph = _find_docx_paragraph_by_index(source_doc, getattr(issue.location, 'paragraph_index', None))
+    if paragraph is not None:
+        return paragraph
+
+    if issue.location.paragraph_id:
+        for payload in parsed_document.paragraphs:
+            if payload.id == issue.location.paragraph_id and payload.position.paragraph_index is not None:
+                paragraph = _find_docx_paragraph_by_index(source_doc, payload.position.paragraph_index)
+                if paragraph is not None:
+                    return paragraph
+                break
+
+    target_text = _extract_quoted_fragment(issue.evidence)
+    if target_text:
+        paragraph = _find_paragraph_by_text(source_doc, target_text)
+        if paragraph is not None:
+            return paragraph
+
+    for payload in parsed_document.paragraphs:
+        if payload.id == issue.location.paragraph_id and payload.text:
+            return _find_paragraph_by_text(source_doc, payload.text)
+    return None
+
+
+def _collect_body_paragraphs_for_typography_fix(source_doc, parsed_document: DocumentInput):
+    paragraphs = []
+    seen_indexes = set()
+    heading_texts = {_format_heading(section) for section in parsed_document.sections}
+    for payload in parsed_document.paragraphs:
+        paragraph_index = payload.position.paragraph_index
+        if paragraph_index is None or paragraph_index in seen_indexes:
+            continue
+        text = ' '.join((payload.text or '').split())
+        if not text:
+            continue
+        if text in heading_texts:
+            continue
+        paragraph = _find_docx_paragraph_by_index(source_doc, paragraph_index)
+        if paragraph is None:
+            continue
+        paragraphs.append(paragraph)
+        seen_indexes.add(paragraph_index)
+    return paragraphs
+
+
+def _collect_heading_paragraphs_for_typography_fix(source_doc, parsed_document: DocumentInput):
+    paragraphs = []
+    seen_indexes = set()
+    section_headings = parsed_document.meta.extras.get('section_headings', {}) if parsed_document.meta and parsed_document.meta.extras else {}
+    for section in parsed_document.sections:
+        payload = section_headings.get(section.id, {})
+        paragraph_index = payload.get('paragraph_index')
+        paragraph = None
+        if paragraph_index is not None and paragraph_index not in seen_indexes:
+            paragraph = _find_docx_paragraph_by_index(source_doc, paragraph_index)
+            if paragraph is not None:
+                seen_indexes.add(paragraph_index)
+        if paragraph is None:
+            paragraph = _find_paragraph_by_text(source_doc, _format_heading(section))
+        if paragraph is None:
+            continue
+        paragraphs.append(paragraph)
+    return paragraphs
 
 
 def _apply_alignment_fixes(source_doc, parsed_document: DocumentInput, issues: List[Issue]) -> None:

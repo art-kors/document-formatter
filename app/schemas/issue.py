@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class IssueLocation(BaseModel):
     section_id: Optional[str] = None
     paragraph_id: Optional[str] = None
+    paragraph_index: Optional[int] = None
     page: Optional[int] = None
 
 

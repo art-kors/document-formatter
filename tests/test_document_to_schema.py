@@ -3,6 +3,7 @@ import unittest
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Mm
 
 from app.parsing.document_to_schema import parse_docx_to_document, parse_text_to_document
 
@@ -117,6 +118,28 @@ class DocumentToSchemaTests(unittest.TestCase):
         self.assertEqual(len(document.sections), 1)
         self.assertEqual(document.sections[0].number, "1")
         self.assertEqual(len(document.paragraphs), 2)
+
+    def test_parse_docx_to_document_extracts_page_size_metadata(self) -> None:
+        source = Document()
+        source.sections[0].page_width = Mm(148)
+        source.sections[0].page_height = Mm(210)
+        source.add_paragraph("1 ????????")
+
+        buffer = BytesIO()
+        source.save(buffer)
+
+        document = parse_docx_to_document(
+            buffer.getvalue(),
+            filename="report.docx",
+            standard_id="gost_7_32_2017",
+            document_id="doc_docx_page_size",
+        )
+
+        self.assertEqual(document.meta.extras['source_format'], 'docx')
+        self.assertGreaterEqual(len(document.meta.extras['docx_sections']), 1)
+        self.assertAlmostEqual(document.meta.extras['docx_sections'][0]['page_width_mm'], 148.0, places=1)
+        self.assertAlmostEqual(document.meta.extras['docx_sections'][0]['page_height_mm'], 210.0, places=1)
+        self.assertIsNotNone(document.meta.extras['docx_sections'][0]['left_margin_mm'])
 
 
 if __name__ == "__main__":

@@ -49,6 +49,12 @@ def parse_text_to_document(
                 current_section.text = current_section.text.strip()
             current_section = Section(**heading)
             sections.append(current_section)
+            section_heading_meta[current_section.id] = {
+                'paragraph_index': index,
+                'text': text,
+                'alignment': alignment,
+                'style_name': style_name,
+            }
             continue
 
         if current_section is not None:
@@ -113,14 +119,7 @@ def parse_docx_to_document(
 
         alignment = _alignment_name(paragraph.alignment)
         style_name = (getattr(paragraph.style, 'name', '') or '').strip()
-        paragraph_meta.append(
-            {
-                'paragraph_index': index,
-                'text': text,
-                'alignment': alignment,
-                'style': style_name,
-            }
-        )
+        paragraph_meta.append(_build_paragraph_meta_entry(paragraph, index, text, alignment, style_name))
 
         heading = _parse_heading(text)
         if heading is None and _looks_like_word_heading(style_name, text):
@@ -130,6 +129,12 @@ def parse_docx_to_document(
                 current_section.text = current_section.text.strip()
             current_section = Section(**heading)
             sections.append(current_section)
+            section_heading_meta[current_section.id] = {
+                'paragraph_index': index,
+                'text': text,
+                'alignment': alignment,
+                'style_name': style_name,
+            }
             continue
 
         if current_section is not None:
@@ -161,6 +166,8 @@ def parse_docx_to_document(
     extras = {
         'source_format': 'docx',
         'docx_paragraphs': paragraph_meta,
+        'docx_table_paragraphs': _extract_table_paragraph_meta(doc),
+        'docx_sections': _extract_section_page_meta(doc),
         'section_headings': section_heading_meta,
         'has_tables': bool(doc.tables),
         'inline_shapes_count': len(getattr(doc, 'inline_shapes', [])),
@@ -255,6 +262,223 @@ def _fallback_heading_from_style(text: str, sequence: int) -> dict:
         'level': 1,
         'text': '',
     }
+
+
+def _extract_section_page_meta(doc: Any) -> List[Dict[str, Any]]:
+    section_meta: List[Dict[str, Any]] = []
+    for index, section in enumerate(getattr(doc, 'sections', []), start=1):
+        page_width_mm = _emu_to_mm(getattr(section, 'page_width', None))
+        page_height_mm = _emu_to_mm(getattr(section, 'page_height', None))
+        left_margin_mm = _emu_to_mm(getattr(section, 'left_margin', None))
+        right_margin_mm = _emu_to_mm(getattr(section, 'right_margin', None))
+        top_margin_mm = _emu_to_mm(getattr(section, 'top_margin', None))
+        bottom_margin_mm = _emu_to_mm(getattr(section, 'bottom_margin', None))
+        section_meta.append(
+            {
+                'section_index': index,
+                'page_width_mm': page_width_mm,
+                'page_height_mm': page_height_mm,
+                'left_margin_mm': left_margin_mm,
+                'right_margin_mm': right_margin_mm,
+                'top_margin_mm': top_margin_mm,
+                'bottom_margin_mm': bottom_margin_mm,
+                'orientation': 'landscape' if page_width_mm and page_height_mm and page_width_mm > page_height_mm else 'portrait',
+            }
+        )
+    return section_meta
+
+
+def _emu_to_mm(length: Any) -> Optional[float]:
+    if length is None:
+        return None
+    try:
+        return round(float(length) / 36000.0, 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_table_paragraph_meta(doc: Any) -> List[Dict[str, Any]]:
+    table_paragraphs: List[Dict[str, Any]] = []
+    paragraph_index = 10000
+    for table_index, table in enumerate(getattr(doc, 'tables', []), start=1):
+        for row_index, row in enumerate(table.rows, start=1):
+            for cell_index, cell in enumerate(row.cells, start=1):
+                for paragraph in cell.paragraphs:
+                    text = ' '.join(paragraph.text.split())
+                    if not text:
+                        continue
+                    table_paragraphs.append(
+                        {
+                            'paragraph_index': paragraph_index,
+                            'text': text,
+                            'alignment': _alignment_name(paragraph.alignment),
+                            'style': (getattr(paragraph.style, 'name', '') or '').strip(),
+                            'table_index': table_index,
+                            'row_index': row_index,
+                            'cell_index': cell_index,
+                        }
+                    )
+                    paragraph_index += 1
+    return table_paragraphs
+
+
+def _build_paragraph_meta_entry(paragraph: Any, index: int, text: str, alignment: str, style_name: str) -> Dict[str, Any]:
+    return {
+        'paragraph_index': index,
+        'text': text,
+        'alignment': alignment,
+        'style': style_name,
+        'first_line_indent_mm': _length_to_mm(_effective_first_line_indent(paragraph)),
+        'line_spacing': _effective_line_spacing(paragraph),
+        'font_size_pt_min': _paragraph_min_font_size_pt(paragraph),
+        'font_family': _paragraph_font_family(paragraph),
+        'has_bold_text': _paragraph_has_bold_text(paragraph),
+        'has_non_black_text': _paragraph_has_non_black_text(paragraph),
+    }
+
+
+def _length_to_mm(length: Any) -> Optional[float]:
+    if length is None:
+        return None
+    try:
+        return round(float(length.mm), 1)
+    except AttributeError:
+        try:
+            return round(float(length) / 36000.0, 1)
+        except (TypeError, ValueError):
+            return None
+
+
+def _effective_first_line_indent(paragraph: Any) -> Any:
+    indent = getattr(paragraph.paragraph_format, 'first_line_indent', None)
+    if indent is not None:
+        return indent
+    return _resolve_style_paragraph_attr(getattr(paragraph, 'style', None), 'first_line_indent')
+
+
+def _effective_line_spacing(paragraph: Any) -> Optional[float]:
+    spacing = getattr(paragraph.paragraph_format, 'line_spacing', None)
+    if spacing is None:
+        spacing = _resolve_style_paragraph_attr(getattr(paragraph, 'style', None), 'line_spacing')
+    if spacing is None:
+        return None
+    if isinstance(spacing, (int, float)):
+        return round(float(spacing), 2)
+    try:
+        return round(float(spacing), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _paragraph_min_font_size_pt(paragraph: Any) -> Optional[float]:
+    sizes: List[float] = []
+    for run in getattr(paragraph, 'runs', []):
+        if not ''.join(getattr(run, 'text', '').split()):
+            continue
+        size = _effective_run_font_size_pt(run, paragraph)
+        if size is not None:
+            sizes.append(size)
+    return round(min(sizes), 1) if sizes else None
+
+
+def _paragraph_font_family(paragraph: Any) -> Optional[str]:
+    for run in getattr(paragraph, 'runs', []):
+        if not ''.join(getattr(run, 'text', '').split()):
+            continue
+        family = _effective_run_font_name(run, paragraph)
+        if family:
+            return family
+    return _resolve_style_font_attr(getattr(paragraph, 'style', None), 'name')
+
+
+def _effective_run_font_name(run: Any, paragraph: Any) -> Optional[str]:
+    name = getattr(getattr(run, 'font', None), 'name', None)
+    if not name and getattr(run, 'style', None) is not None:
+        name = _resolve_style_font_attr(run.style, 'name')
+    if not name:
+        name = _resolve_style_font_attr(getattr(paragraph, 'style', None), 'name')
+    return str(name).strip() if name else None
+
+
+def _paragraph_has_bold_text(paragraph: Any) -> bool:
+    for run in getattr(paragraph, 'runs', []):
+        if not ''.join(getattr(run, 'text', '').split()):
+            continue
+        if _effective_run_bold(run, paragraph):
+            return True
+    return False
+
+
+def _paragraph_has_non_black_text(paragraph: Any) -> bool:
+    for run in getattr(paragraph, 'runs', []):
+        if not ''.join(getattr(run, 'text', '').split()):
+            continue
+        color = _effective_run_color_rgb(run, paragraph)
+        if color and color not in {'000000', 'AUTO'}:
+            return True
+    return False
+
+
+def _effective_run_font_size_pt(run: Any, paragraph: Any) -> Optional[float]:
+    size = getattr(getattr(run, 'font', None), 'size', None)
+    if size is None and getattr(run, 'style', None) is not None:
+        size = _resolve_style_font_attr(run.style, 'size')
+    if size is None:
+        size = _resolve_style_font_attr(getattr(paragraph, 'style', None), 'size')
+    if size is None:
+        return None
+    try:
+        return round(float(size.pt), 1)
+    except AttributeError:
+        return None
+
+
+def _effective_run_bold(run: Any, paragraph: Any) -> bool:
+    bold = getattr(getattr(run, 'font', None), 'bold', None)
+    if bold is None and getattr(run, 'style', None) is not None:
+        bold = _resolve_style_font_attr(run.style, 'bold')
+    if bold is None:
+        bold = _resolve_style_font_attr(getattr(paragraph, 'style', None), 'bold')
+    return bool(bold)
+
+
+def _effective_run_color_rgb(run: Any, paragraph: Any) -> Optional[str]:
+    color = getattr(getattr(getattr(run, 'font', None), 'color', None), 'rgb', None)
+    if color is None and getattr(run, 'style', None) is not None:
+        color = _resolve_style_font_color(run.style)
+    if color is None:
+        color = _resolve_style_font_color(getattr(paragraph, 'style', None))
+    return str(color).upper() if color is not None else None
+
+
+def _resolve_style_paragraph_attr(style: Any, attr: str) -> Any:
+    current = style
+    while current is not None:
+        value = getattr(getattr(current, 'paragraph_format', None), attr, None)
+        if value is not None:
+            return value
+        current = getattr(current, 'base_style', None)
+    return None
+
+
+def _resolve_style_font_attr(style: Any, attr: str) -> Any:
+    current = style
+    while current is not None:
+        value = getattr(getattr(current, 'font', None), attr, None)
+        if value is not None:
+            return value
+        current = getattr(current, 'base_style', None)
+    return None
+
+
+def _resolve_style_font_color(style: Any) -> Any:
+    current = style
+    while current is not None:
+        color = getattr(getattr(getattr(current, 'font', None), 'color', None), 'rgb', None)
+        if color is not None:
+            return color
+        current = getattr(current, 'base_style', None)
+    return None
 
 
 def _alignment_name(value: Any) -> str:

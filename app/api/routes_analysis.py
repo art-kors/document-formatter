@@ -23,9 +23,8 @@ async def generate(
     document: UploadFile = File(...),
     instruction: UploadFile = File(...),
 ):
-    pipeline = get_pipeline()
-
     try:
+        pipeline = get_pipeline()
         doc_text = extract_text(document)
         instr_text = extract_text(instruction)
         processing_result = pipeline.process_instruction(
@@ -58,8 +57,8 @@ async def generate(
 
 @router.post("/ask")
 async def ask_question(question: str = Body(..., embed=True)):
-    pipeline = get_pipeline()
     try:
+        pipeline = get_pipeline()
         return pipeline.query(question)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -69,8 +68,8 @@ async def ask_question(question: str = Body(..., embed=True)):
 
 @router.post("/analyze")
 async def analyze_document(document: DocumentInput):
-    pipeline = get_pipeline()
     try:
+        pipeline = get_pipeline()
         return pipeline.analyze_document(document)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -85,20 +84,30 @@ async def analyze_uploaded_file(
     document_id: str | None = Form(default=None),
     include_parsed_document: bool = Form(default=False),
 ):
-    pipeline = get_pipeline()
     try:
+        pipeline = get_pipeline()
         filename = document.filename or 'uploaded_document'
         content = await document.read()
         ext = filename.lower().split('.')[-1] if '.' in filename else ''
         content_type = document.content_type or ''
 
         if ext in {'docx', 'doc'} or 'wordprocessingml' in content_type:
-            parsed_document = parse_docx_to_document(
-                content,
-                filename=filename,
-                standard_id=standard_id,
-                document_id=document_id,
-            )
+            try:
+                parsed_document = parse_docx_to_document(
+                    content,
+                    filename=filename,
+                    standard_id=standard_id,
+                    document_id=document_id,
+                )
+            except Exception as exc:
+                parsed_document = parse_text_to_document(
+                    extract_text_from_docx(content),
+                    filename=filename,
+                    standard_id=standard_id,
+                    document_id=document_id,
+                )
+                parsed_document.meta.extras['source_format'] = 'docx_fallback'
+                parsed_document.meta.extras['docx_parser_error'] = str(exc)
         elif ext == 'pdf' or content_type == 'application/pdf':
             parsed_document = parse_text_to_document(
                 extract_text_from_pdf(content),
@@ -199,7 +208,10 @@ def _attachment_headers(filename: str) -> dict[str, str]:
 
 @router.get("/download-graph")
 async def download_graph():
-    pipeline = get_pipeline()
+    try:
+        pipeline = get_pipeline()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     file_path = pipeline.get_graph_path()
     if file_path and os.path.exists(file_path):
         return FileResponse(

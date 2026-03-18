@@ -1,4 +1,4 @@
-﻿from typing import Dict, List, Optional
+from typing import Dict, List, Optional
 
 from app.agents.rag_agent.checker import analyze_document_against_standard
 from app.agents.rag_agent.retriever import GraphRAGRetriever, VectorIndex
@@ -10,9 +10,14 @@ from app.standards.registry import StandardRegistry
 
 
 class GraphRAGService:
-    def __init__(self, llm_provider: LLMProvider, registry: StandardRegistry):
+    def __init__(
+        self,
+        llm_provider: LLMProvider,
+        embedding_provider: EmbeddingProvider,
+        registry: StandardRegistry,
+    ):
         self.llm_provider = llm_provider
-        self.embedding_provider = llm_provider if isinstance(llm_provider, EmbeddingProvider) else None
+        self.embedding_provider = embedding_provider
         self.registry = registry
         self.ingestor = StandardIngestor()
         self.artifacts: Optional[StandardArtifacts] = None
@@ -23,9 +28,6 @@ class GraphRAGService:
         return self.retriever is not None and self.artifacts is not None
 
     def process_instruction(self, standard_text: str, standard_name: str) -> Dict:
-        if self.embedding_provider is None:
-            raise RuntimeError("Configured LLM provider does not support embeddings")
-
         standard_id = self.registry.register_uploaded_standard(standard_name)
         self.artifacts = self.ingestor.ingest_text(
             standard_id=standard_id,

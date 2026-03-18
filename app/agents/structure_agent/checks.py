@@ -70,7 +70,7 @@ def build_structure_map(document: DocumentInput) -> List[dict]:
 
 def build_structure_summary(document: DocumentInput, issues: Optional[List[Issue]] = None) -> Dict[str, object]:
     entries = _build_structure_entries(document)
-    normalized_titles = [_normalize_title(entry.title) for entry in entries if entry.level == 1]
+    normalized_titles = _collect_normalized_required_titles(document, entries)
     missing_sections = [
         expected for expected, variants in REQUIRED_SECTION_GROUPS.items()
         if not any(any(variant in title for variant in variants) for title in normalized_titles)
@@ -137,7 +137,7 @@ def run_structure_checks(document: DocumentInput, standard_id: str = "") -> List
             issues.append(_make_issue(issue_id=issue_id, **payload))
             issue_id += 1
 
-    for payload in _check_required_sections(entries):
+    for payload in _check_required_sections(document, entries):
         issues.append(_make_issue(issue_id=issue_id, **payload))
         issue_id += 1
 
@@ -355,9 +355,9 @@ def _check_section_order(entries: List[StructureEntry]) -> List[dict]:
     return issues
 
 
-def _check_required_sections(entries: List[StructureEntry]) -> List[dict]:
+def _check_required_sections(document: DocumentInput, entries: List[StructureEntry]) -> List[dict]:
     issues: List[dict] = []
-    titles = [_normalize_title(entry.title) for entry in entries if entry.level == 1]
+    titles = _collect_normalized_required_titles(document, entries)
 
     for expected_title, variants in REQUIRED_SECTION_GROUPS.items():
         if not any(any(variant in title for variant in variants) for title in titles):
@@ -467,3 +467,18 @@ def _deduplicate_issues(issues: List[Issue]) -> List[Issue]:
         seen.add(key)
         unique.append(issue)
     return unique
+
+
+def _collect_normalized_required_titles(document: DocumentInput, entries: List[StructureEntry]) -> List[str]:
+    titles = [_normalize_title(entry.title) for entry in entries if entry.level == 1]
+    paragraph_meta = document.meta.extras.get('docx_paragraphs', []) if document.meta.extras else []
+    table_meta = document.meta.extras.get('docx_table_paragraphs', []) if document.meta.extras else []
+    for item in paragraph_meta[:60] + table_meta[:60]:
+        normalized = _normalize_title(str(item.get('text', '')))
+        if normalized:
+            titles.append(normalized)
+    for paragraph in document.paragraphs[:80]:
+        normalized = _normalize_title(paragraph.text)
+        if normalized:
+            titles.append(normalized)
+    return titles

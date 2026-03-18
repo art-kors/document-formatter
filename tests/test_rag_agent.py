@@ -217,6 +217,64 @@ class GraphRAGCheckerTests(unittest.TestCase):
         result = analyze_document_against_standard(document, self.standard_id)
         self.assertNotIn("invalid_appendix_heading", [issue.subtype for issue in result.issues])
 
+    def test_docx_title_page_is_recognized_with_generic_official_layout(self) -> None:
+        document = DocumentInput(
+            document_id="doc_title_page_present",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "???????????? ????? ? ??????? ??????????? ?????????? ?????????", "alignment": "center", "style": "Normal"},
+                        {"paragraph_index": 2, "text": "???????????? ????????????????? ???????????", "alignment": "center", "style": "Normal"},
+                        {"paragraph_index": 3, "text": "??????? ?????????????? ??????????", "alignment": "center", "style": "Normal"},
+                        {"paragraph_index": 4, "text": "?????", "alignment": "center", "style": "Normal"},
+                        {"paragraph_index": 5, "text": "?? ?????????????????? ???????", "alignment": "center", "style": "Normal"},
+                        {"paragraph_index": 6, "text": "????????: ??????? ?????? ??8-11", "alignment": "right", "style": "Normal"},
+                        {"paragraph_index": 7, "text": "????????????: ?????? ?.?.", "alignment": "right", "style": "Normal"},
+                        {"paragraph_index": 8, "text": "?????? 2026", "alignment": "center", "style": "Normal"},
+                        {"paragraph_index": 9, "text": "??????????", "alignment": "center", "style": "Heading 1"},
+                    ],
+                },
+            ),
+            sections=[
+                Section(id="sec_contents", number="", title="Содержание", text="1 Введение"),
+                Section(id="sec_1", number="1", title="Введение", text="Текст раздела"),
+            ],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="Текст раздела", position=Position(page=2, paragraph_index=10))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertNotIn("missing_title_page", [issue.subtype for issue in result.issues])
+
+    def test_docx_detects_oglavlenie_and_reference_heading_from_paragraphs(self) -> None:
+        document = DocumentInput(
+            document_id="doc_front_blocks_present",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "Оглавление", "alignment": "center", "style": "Heading 1"},
+                        {"paragraph_index": 2, "text": "1 Введение", "alignment": "left", "style": "Normal"},
+                        {"paragraph_index": 3, "text": "Список использованных источников", "alignment": "center", "style": "Heading 1"},
+                        {"paragraph_index": 4, "text": "[1] ГОСТ 7.32-2017", "alignment": "left", "style": "Normal"},
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="Введение", text="Текст раздела")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="Текст раздела", position=Position(page=2, paragraph_index=5))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertNotIn("missing_contents_section", subtypes)
+        self.assertNotIn("missing_references_section", subtypes)
+
     def test_docx_front_matter_checks_create_title_and_contents_issues(self) -> None:
         document = DocumentInput(
             document_id="doc_front_matter",
@@ -244,6 +302,99 @@ class GraphRAGCheckerTests(unittest.TestCase):
         subtypes = [issue.subtype for issue in result.issues]
         self.assertIn("missing_title_page", subtypes)
         self.assertIn("missing_contents_section", subtypes)
+
+    def test_docx_invalid_page_size_creates_issue(self) -> None:
+        document = DocumentInput(
+            document_id="doc_invalid_page_size",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_sections": [
+                        {"section_index": 1, "page_width_mm": 148.0, "page_height_mm": 210.0, "orientation": "portrait"},
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="????? ???????", position=Position(page=1, paragraph_index=1))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertIn("invalid_page_size", [issue.subtype for issue in result.issues])
+
+    def test_docx_a4_page_size_does_not_create_issue(self) -> None:
+        document = DocumentInput(
+            document_id="doc_a4_page_size",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_sections": [
+                        {"section_index": 1, "page_width_mm": 210.0, "page_height_mm": 297.0, "orientation": "portrait"},
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="????? ???????", position=Position(page=1, paragraph_index=1))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertNotIn("invalid_page_size", [issue.subtype for issue in result.issues])
+
+    def test_docx_typography_and_layout_issues_are_detected(self) -> None:
+        document = DocumentInput(
+            document_id="doc_typography_issues",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_sections": [
+                        {
+                            "section_index": 1,
+                            "page_width_mm": 210.0,
+                            "page_height_mm": 297.0,
+                            "left_margin_mm": 25.0,
+                            "right_margin_mm": 10.0,
+                            "top_margin_mm": 15.0,
+                            "bottom_margin_mm": 15.0,
+                            "orientation": "portrait",
+                        },
+                    ],
+                    "docx_paragraphs": [
+                        {
+                            "paragraph_index": 1,
+                            "text": "??? ???????? ????? ? ????????? ???????????? ??????????? ??? ????????.",
+                            "alignment": "justify",
+                            "style": "Normal",
+                            "first_line_indent_mm": 0.0,
+                            "line_spacing": 1.0,
+                            "font_size_pt_min": 11.0,
+                            "font_family": "Arial",
+                            "has_bold_text": True,
+                            "has_non_black_text": True,
+                        },
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="??? ???????? ????? ? ????????? ???????????? ??????????? ??? ????????.", position=Position(page=1, paragraph_index=1))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertIn("invalid_page_margins", subtypes)
+        self.assertIn("invalid_first_line_indent", subtypes)
+        self.assertIn("invalid_line_spacing", subtypes)
+        self.assertIn("invalid_font_size", subtypes)
+        self.assertIn("invalid_font_family", subtypes)
+        self.assertIn("invalid_font_color", subtypes)
+        self.assertIn("unexpected_bold_text", subtypes)
 
     def test_figure_caption_trailing_period_creates_issue(self) -> None:
         document = DocumentInput(
@@ -312,6 +463,20 @@ class GraphRAGCheckerTests(unittest.TestCase):
 
         result = analyze_document_against_standard(document, self.standard_id)
         self.assertIn("figure_numbering_error", [issue.subtype for issue in result.issues])
+
+
+    def test_figure_caption_with_em_dash_is_not_flagged_as_invalid(self) -> None:
+        document = DocumentInput(
+            document_id="doc_figure_em_dash",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(filename="report.docx", title="Report"),
+            sections=[Section(id="sec_1", number="1", title="\u041e\u0441\u043d\u043e\u0432\u043d\u0430\u044f \u0447\u0430\u0441\u0442\u044c")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="\u0421\u043c. \u0440\u0438\u0441\u0443\u043d\u043e\u043a 9.", position=Position(page=1, paragraph_index=1))],
+            figures=[FigureItem(id="fig_9", caption="\u0420\u0438\u0441\u0443\u043d\u043e\u043a 9 \u2014 \u0417\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u044c \u0431\u0430\u0437\u043e\u0432\u043e\u0439 \u0438\u043d\u0442\u0435\u043d\u0441\u0438\u0432\u043d\u043e\u0441\u0442\u0438 \u043e\u0442\u043a\u0430\u0437\u043e\u0432 \u043e\u0442 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0439 \u043c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u0433\u043e \u0442\u043e\u043a\u0430 \u0444\u043e\u0440\u043c\u0443\u043b\u0435 (8)", position=Position(page=1, paragraph_index=2))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertNotIn("invalid_figure_caption_format", [issue.subtype for issue in result.issues])
 
 
 if __name__ == "__main__":

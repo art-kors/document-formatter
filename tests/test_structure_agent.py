@@ -131,6 +131,33 @@ class StructureAgentTests(unittest.TestCase):
         issues = run_structure_checks(document, document.standard_id)
         self.assertTrue(any(issue.subtype == "numbering_error" and issue.location.section_id == "sec_2" for issue in issues))
 
+    def test_required_sections_can_be_detected_from_docx_paragraphs(self) -> None:
+        document = DocumentInput(
+            document_id="doc_structure_docx_required",
+            standard_id="gost_7_32_2017",
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "?????? ?????????????? ??????????", "alignment": "center", "style": "Heading 1"},
+                        {"paragraph_index": 2, "text": "[1] ???? 7.32-2017", "alignment": "left", "style": "Normal"},
+                    ],
+                },
+            ),
+            sections=[
+                Section(id="sec_1", number="1", title="????????", level=1),
+                Section(id="sec_2", number="2", title="??????????", level=1),
+            ],
+            paragraphs=[
+                Paragraph(id="p_1", section_id="sec_1", text="?????", position=Position(page=1, paragraph_index=1)),
+                Paragraph(id="p_2", section_id="sec_2", text="?????", position=Position(page=2, paragraph_index=2)),
+            ],
+        )
+
+        issues = run_structure_checks(document, document.standard_id)
+        self.assertFalse(any(issue.subtype == "missing_required_section" and "?????? ?????????????? ??????????" in issue.evidence for issue in issues))
+
     def test_structure_service_returns_summary_details(self) -> None:
         document = DocumentInput(
             document_id="doc_structure_summary",

@@ -3,6 +3,7 @@ from io import BytesIO
 import json
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -188,6 +189,29 @@ class AnalyzeFileApiTests(unittest.TestCase):
         self.assertIn("filename*=UTF-8''", response.headers['content-disposition'])
         self.assertIn('filename="', response.headers['content-disposition'])
         self.assertTrue(response.content.startswith(b'PK'))
+
+
+    def test_analyze_file_endpoint_falls_back_when_python_docx_cannot_parse_file(self) -> None:
+        source_bytes = _build_minimal_docx([
+            '1 Введение',
+            'На рисунке 1 показана архитектура.',
+        ])
+
+        with patch('app.api.routes_analysis.parse_docx_to_document', side_effect=ValueError("file '<_io.BytesIO object>' is not a Word file, content type is 'application/vnd.openxmlformats-officedocument.themeManager+xml'")):
+            response = self.client.post(
+                '/analyze-file',
+                files={'document': ('broken.docx', source_bytes, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')},
+                data={
+                    'standard_id': 'gost_7_32_2017',
+                    'document_id': 'api_doc_docx_fallback',
+                    'include_parsed_document': 'true',
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['parsed_document']['meta']['extras']['source_format'], 'docx_fallback')
+        self.assertIn('themeManager', payload['parsed_document']['meta']['extras']['docx_parser_error'])
 
 
 if __name__ == '__main__':

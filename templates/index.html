@@ -645,8 +645,8 @@
                 body: formData,
             });
             if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
-                throw new Error(payload.detail || '?? ??????? ????????? ??????????? ? ????????? DOCX');
+                const payload = await readApiResponse(response);
+                throw new Error(payload.detail || payload.message || '?? ??????? ????????? ??????????? ? ????????? DOCX');
             }
 
             const blob = await response.blob();
@@ -696,9 +696,9 @@
                 method: 'POST',
                 body: formData,
             });
-            const payload = await response.json();
+            const payload = await readApiResponse(response);
             if (!response.ok) {
-                throw new Error(payload.detail || 'Не удалось выполнить проверку');
+                throw new Error(payload.detail || payload.message || '?? ??????? ????????? ????????');
             }
 
             state.report = payload;
@@ -865,6 +865,19 @@
             elements.statusStrip.style.color = 'var(--accent-dark)';
         } else {
             elements.statusStrip.style.color = 'var(--muted)';
+        }
+    }
+
+    async function readApiResponse(response) {
+        const contentType = response.headers.get('content-type') || '';
+        const raw = await response.text();
+        if (contentType.includes('application/json')) {
+            return JSON.parse(raw || '{}');
+        }
+        try {
+            return JSON.parse(raw || '{}');
+        } catch {
+            return { detail: raw || '?????? ?????? ?????? ?????' };
         }
     }
 

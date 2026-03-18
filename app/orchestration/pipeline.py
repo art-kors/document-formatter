@@ -5,7 +5,7 @@ from app.agents.logic_agent.service import LogicAgentService
 from app.agents.rag_agent.service import GraphRAGService
 from app.agents.structure_agent.service import StructureAgentService
 from app.agents.style_agent.service import StyleAgentService
-from app.llm.base import LLMProvider
+from app.llm.base import EmbeddingProvider, LLMProvider
 from app.orchestration.aggregator import build_result, collect_issues
 from app.orchestration.prioritizer import sort_issues
 from app.schemas.agent_result import AgentResult
@@ -15,11 +15,25 @@ from app.standards.registry import StandardRegistry
 
 
 class DocumentPipeline:
-    def __init__(self, llm_provider: LLMProvider, registry: StandardRegistry):
+    def __init__(
+        self,
+        llm_provider: LLMProvider,
+        registry: StandardRegistry,
+        embedding_provider: Optional[EmbeddingProvider] = None,
+    ):
         self.registry = registry
-        self.rag_service = GraphRAGService(llm_provider=llm_provider, registry=registry)
+        self.embedding_provider = embedding_provider or (
+            llm_provider if isinstance(llm_provider, EmbeddingProvider) else None
+        )
+        if self.embedding_provider is None:
+            raise RuntimeError("Configured providers do not support embeddings")
+        self.rag_service = GraphRAGService(
+            llm_provider=llm_provider,
+            embedding_provider=self.embedding_provider,
+            registry=registry,
+        )
         self.structure_agent = StructureAgentService()
-        self.style_agent = StyleAgentService()
+        self.style_agent = StyleAgentService(llm_provider=llm_provider)
         self.logic_agent = LogicAgentService()
 
     def process_instruction(self, standard_text: str, standard_name: str) -> Dict:

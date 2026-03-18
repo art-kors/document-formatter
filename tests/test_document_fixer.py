@@ -1,6 +1,7 @@
 from io import BytesIO
 from docx import Document as WordDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Mm, Pt, RGBColor
 from pathlib import Path
 import unittest
 import zipfile
@@ -202,6 +203,82 @@ class DocumentFixerTests(unittest.TestCase):
         self.assertIn('1.1 Основная часть', headings)
         self.assertIn('2 Заключение', headings)
         self.assertIn('3 Список использованных источников', headings)
+
+
+    def test_apply_fixes_to_source_docx_updates_typography_and_margins(self) -> None:
+        source = WordDocument()
+        section = source.sections[0]
+        section.page_width = Mm(180)
+        section.page_height = Mm(260)
+        section.left_margin = Mm(25)
+        section.right_margin = Mm(10)
+        section.top_margin = Mm(15)
+        section.bottom_margin = Mm(15)
+        heading = source.add_paragraph('1 ???????? ?????')
+        heading_run = heading.runs[0]
+        heading_run.font.size = Pt(14)
+        heading_run.font.name = 'Calibri'
+        heading_run.font.color.rgb = RGBColor(0, 0, 255)
+        body = source.add_paragraph('??? ???????? ????? ? ????????? ???????????? ??????????? ??? ????????.')
+        body.paragraph_format.first_line_indent = Mm(0)
+        body.paragraph_format.line_spacing = 1.0
+        run = body.runs[0]
+        run.font.size = Pt(11)
+        run.font.name = 'Arial'
+        run.font.bold = True
+        run.font.color.rgb = RGBColor(255, 0, 0)
+        second_body = source.add_paragraph('?????? ?????? ????? ??? ??????? ??? ??????? ????? ??????.')
+        second_body.paragraph_format.first_line_indent = Mm(0)
+        second_body.paragraph_format.line_spacing = 1.0
+        second_run = second_body.runs[0]
+        second_run.font.size = Pt(10)
+        second_run.font.name = 'Calibri'
+        second_run.font.bold = True
+        second_run.font.color.rgb = RGBColor(128, 128, 128)
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='typography_fix.docx',
+            standard_id='gost_7_32_2017',
+            document_id='typography_fix',
+        )
+        result = self.pipeline.analyze_document(parsed)
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+        fixed_section = fixed_doc.sections[0]
+        fixed_heading = next(paragraph for paragraph in fixed_doc.paragraphs if '1 ???????? ?????' in paragraph.text)
+        fixed_heading_run = fixed_heading.runs[0]
+        fixed_body = next(paragraph for paragraph in fixed_doc.paragraphs if '??? ???????? ?????' in paragraph.text)
+        fixed_run = fixed_body.runs[0]
+        fixed_second_body = next(paragraph for paragraph in fixed_doc.paragraphs if '?????? ??????' in paragraph.text)
+        fixed_second_run = fixed_second_body.runs[0]
+
+        self.assertAlmostEqual(fixed_section.page_width.mm, 210.0, places=1)
+        self.assertAlmostEqual(fixed_section.page_height.mm, 297.0, places=1)
+        self.assertAlmostEqual(fixed_section.left_margin.mm, 30.0, places=1)
+        self.assertAlmostEqual(fixed_section.right_margin.mm, 15.0, places=1)
+        self.assertAlmostEqual(fixed_section.top_margin.mm, 20.0, places=1)
+        self.assertAlmostEqual(fixed_section.bottom_margin.mm, 20.0, places=1)
+        self.assertAlmostEqual(fixed_heading_run.font.size.pt, 12.0, places=1)
+        self.assertEqual(fixed_heading_run.font.name, 'Times New Roman')
+        self.assertEqual(str(fixed_heading_run.font.color.rgb), '000000')
+        self.assertAlmostEqual(fixed_body.paragraph_format.first_line_indent.mm, 12.5, places=1)
+        self.assertAlmostEqual(float(fixed_body.paragraph_format.line_spacing), 1.5, places=1)
+        self.assertAlmostEqual(fixed_run.font.size.pt, 12.0, places=1)
+        self.assertEqual(fixed_run.font.name, 'Times New Roman')
+        self.assertFalse(bool(fixed_run.font.bold))
+        self.assertEqual(str(fixed_run.font.color.rgb), '000000')
+        self.assertAlmostEqual(fixed_second_body.paragraph_format.first_line_indent.mm, 12.5, places=1)
+        self.assertAlmostEqual(float(fixed_second_body.paragraph_format.line_spacing), 1.5, places=1)
+        self.assertAlmostEqual(fixed_second_run.font.size.pt, 12.0, places=1)
+        self.assertEqual(fixed_second_run.font.name, 'Times New Roman')
+        self.assertFalse(bool(fixed_second_run.font.bold))
+        self.assertEqual(str(fixed_second_run.font.color.rgb), '000000')
 
 
 if __name__ == '__main__':
