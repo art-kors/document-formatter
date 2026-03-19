@@ -792,6 +792,7 @@ def _apply_page_numbering_fixes(source_doc, issues: List[Issue]) -> None:
     relevant_subtypes = {
         'missing_page_numbering',
         'page_number_not_centered',
+        'page_number_in_header',
         'title_page_number_visible',
         'page_numbering_restart',
     }
@@ -801,11 +802,12 @@ def _apply_page_numbering_fixes(source_doc, issues: List[Issue]) -> None:
     for index, section in enumerate(getattr(source_doc, 'sections', []), start=1):
         footer = getattr(section, 'footer', None)
         first_footer = getattr(section, 'first_page_footer', None)
+        even_footer = getattr(section, 'even_page_footer', None)
         header = getattr(section, 'header', None)
         first_header = getattr(section, 'first_page_header', None)
         even_header = getattr(section, 'even_page_header', None)
 
-        for region in (footer, first_footer, header, first_header, even_header):
+        for region in (footer, first_footer, even_footer, header, first_header, even_header):
             if region is None:
                 continue
             try:
@@ -819,23 +821,40 @@ def _apply_page_numbering_fixes(source_doc, issues: List[Issue]) -> None:
             except Exception:
                 pass
             if first_footer is not None:
-                _remove_footer_page_fields(first_footer)
+                _reset_story_content(first_footer)
             if first_header is not None:
-                _remove_footer_page_fields(first_header)
+                _reset_story_content(first_header)
+            if even_footer is not None:
+                _reset_story_content(even_footer)
 
         if header is not None:
-            _remove_footer_page_fields(header)
+            _reset_story_content(header)
         if even_header is not None:
-            _remove_footer_page_fields(even_header)
+            _reset_story_content(even_header)
+        if even_footer is not None:
+            _reset_story_content(even_footer)
 
         _remove_page_number_restart(section)
         if footer is not None:
+            _reset_story_content(footer)
             _ensure_centered_footer_page_field(footer)
 
 
+def _reset_story_content(story) -> None:
+    element = getattr(story, '_element', None)
+    if element is None:
+        return
+    for child in list(element):
+        element.remove(child)
+    try:
+        story.add_paragraph()
+    except Exception:
+        pass
+
+
 def _remove_footer_page_fields(footer) -> None:
-    for paragraph in getattr(footer, 'paragraphs', []) or []:
-        if _paragraph_has_page_field(paragraph):
+    for paragraph in _iter_story_paragraphs(footer):
+        if _paragraph_has_page_field(paragraph) or _looks_like_manual_page_number(paragraph):
             _replace_paragraph_text(paragraph, '')
             paragraph.alignment = None
 
@@ -847,21 +866,43 @@ def _ensure_centered_footer_page_field(footer) -> None:
     if paragraph is None:
         paragraphs = list(getattr(footer, 'paragraphs', []) or [])
         paragraph = paragraphs[0] if paragraphs else footer.add_paragraph()
-    for candidate in getattr(footer, 'paragraphs', []) or []:
+    for candidate in _iter_story_paragraphs(footer):
         if candidate is paragraph:
             continue
-        if _paragraph_has_page_field(candidate):
+        if _paragraph_has_page_field(candidate) or _looks_like_manual_page_number(candidate):
             _replace_paragraph_text(candidate, '')
     _replace_paragraph_with_page_field(paragraph)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 
 def _find_footer_page_paragraph(footer):
-    for paragraph in getattr(footer, 'paragraphs', []) or []:
+    for paragraph in _iter_story_paragraphs(footer):
         if _paragraph_has_page_field(paragraph):
+            return paragraph
+    for paragraph in _iter_story_paragraphs(footer):
+        if _looks_like_manual_page_number(paragraph):
             return paragraph
     return None
 
+
+
+
+def _iter_story_paragraphs(story):
+    if story is None:
+        return
+    for paragraph in getattr(story, 'paragraphs', []) or []:
+        yield paragraph
+    for table in getattr(story, 'tables', []) or []:
+        for row in table.rows:
+            for cell in row.cells:
+                yield from _iter_story_paragraphs(cell)
+
+
+def _looks_like_manual_page_number(paragraph) -> bool:
+    text = normalize_whitespace(getattr(paragraph, 'text', ''))
+    if not text:
+        return False
+    return bool(re.fullmatch(r'\(?\d+\)?\.?', text))
 
 def _paragraph_has_page_field(paragraph) -> bool:
     xml = getattr(getattr(paragraph, '_p', None), 'xml', '') or ''

@@ -531,7 +531,12 @@ def _extract_docx_formula_meta(doc: Any) -> List[Dict[str, Any]]:
 
 def _starts_with_formula_explanation(text: str) -> bool:
     normalized = ' '.join((text or '').split()).lower()
-    return normalized.startswith('где')
+    return normalized.startswith('\u0433\u0434\u0435')
+
+
+def _contains_too_many_cyrillic_words_for_formula(text: str) -> bool:
+    words = re.findall(r'[\u0410-\u042f\u0430-\u044f\u0401\u0451]{2,}', text)
+    return len(words) >= 3
 
 
 def _looks_like_formula_paragraph(text: str) -> bool:
@@ -539,7 +544,7 @@ def _looks_like_formula_paragraph(text: str) -> bool:
     if not normalized:
         return False
     lowered = normalized.lower()
-    if lowered.startswith('где'):
+    if lowered.startswith('\u0433\u0434\u0435'):
         return False
     if len(normalized) > 220:
         return False
@@ -551,7 +556,7 @@ def _looks_like_formula_paragraph(text: str) -> bool:
         return False
 
     before, formula, _ = _split_formula_sentence(normalized)
-    if formula and '=' in formula and len(formula) <= 120:
+    if formula and '=' in formula and len(formula) <= 120 and not _contains_too_many_cyrillic_words_for_formula(formula):
         return True
 
     has_equation_number = bool(_extract_formula_number(normalized) or _extract_raw_formula_number(normalized))
@@ -562,6 +567,8 @@ def _looks_like_formula_paragraph(text: str) -> bool:
         if not left or not right:
             return False
         if len(left) > 40 or len(right) > 80:
+            return False
+        if _contains_too_many_cyrillic_words_for_formula(normalized):
             return False
         lhs_ok = bool(re.search(r'[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9_)\]]$', left))
         rhs_ok = bool(re.search(r'[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9_(\[]', right) and any(symbol in normalized for symbol in ('=', '+', '-', '*', '/', '^')))

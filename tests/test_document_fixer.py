@@ -348,6 +348,8 @@ class DocumentFixerTests(unittest.TestCase):
         _add_page_field(footer_paragraph)
         header_paragraph = section.header.paragraphs[0]
         _add_page_field(header_paragraph)
+        manual_footer = section.footer.add_paragraph('1')
+        manual_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         first_footer_paragraph = section.first_page_footer.paragraphs[0]
         _add_page_field(first_footer_paragraph)
         first_header_paragraph = section.first_page_header.paragraphs[0]
@@ -379,7 +381,9 @@ class DocumentFixerTests(unittest.TestCase):
         self.assertTrue(fixed_section.different_first_page_header_footer)
         self.assertEqual(fixed_footer_paragraph.alignment, WD_ALIGN_PARAGRAPH.CENTER)
         self.assertTrue(_paragraph_has_page_field(fixed_footer_paragraph))
+        self.assertEqual(sum(1 for paragraph in fixed_section.footer.paragraphs if _paragraph_has_page_field(paragraph)), 1)
         self.assertFalse(any(_paragraph_has_page_field(paragraph) for paragraph in fixed_section.first_page_footer.paragraphs))
+        self.assertFalse(any(_paragraph_has_page_field(paragraph) for paragraph in fixed_section.even_page_footer.paragraphs))
         self.assertFalse(any(_paragraph_has_page_field(paragraph) for paragraph in fixed_section.header.paragraphs))
         self.assertFalse(any(_paragraph_has_page_field(paragraph) for paragraph in fixed_section.first_page_header.paragraphs))
 

@@ -508,7 +508,6 @@ def _check_front_matter_and_layout(document: DocumentInput, parsed_standard: Par
             )
     return issues
 
-
 def _check_page_size(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:
     section_meta = document.meta.extras.get('docx_sections', []) if document.meta.extras else []
     if not section_meta:
@@ -652,7 +651,6 @@ def _check_page_numbering(document: DocumentInput, parsed_standard: ParsedStanda
         )
 
     return issues
-
 
 def _check_page_layout_and_typography(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:
     section_meta = document.meta.extras.get('docx_sections', []) if document.meta.extras else []
@@ -836,26 +834,26 @@ def _check_enumerations(document: DocumentInput, parsed_standard: ParsedStandard
     }
     issues: List[Issue] = []
     for item in paragraph_meta:
-        text = normalize_whitespace(str(item.get('text', '')))
-        if not text:
+        text_value = normalize_whitespace(str(item.get('text', '')))
+        if not text_value:
             continue
         paragraph_index = item.get('paragraph_index')
         if paragraph_index in section_heading_indexes:
             continue
-        if _looks_like_invalid_enumeration_marker(text):
+        if _looks_like_invalid_enumeration_marker(text_value):
             issues.append(
                 _build_issue(
                     'formatting',
                     'invalid_enumeration_marker',
                     'warning',
-                    _u('?????? ???????????? ???????? ?? ?? ?????'),
-                    _u('????? ?????????? ? ????????????? ??????? ????????????: ') + text + '.',
+                    _u('Маркер перечисления оформлен не по ГОСТу'),
+                    _u('Обнаружен некорректный маркер перечисления: ') + text_value + '.',
                     IssueLocation(paragraph_index=paragraph_index),
                     _build_standard_reference(standard_id, formatting_rule),
-                    _u('???????????? ????, ????? ???????? ???????? ?? ??????? ??? ???????? ????? ?? ???????.'),
+                    _u('Использовать тире, букву со скобкой или цифру со скобкой по правилам ГОСТа.'),
                 )
             )
-        elif _looks_like_enumeration_item(text):
+        elif _looks_like_enumeration_item(text_value):
             indent = item.get('first_line_indent_mm')
             if indent is not None and abs(float(indent) - 12.5) > 1.5:
                 issues.append(
@@ -863,15 +861,14 @@ def _check_enumerations(document: DocumentInput, parsed_standard: ParsedStandard
                         'formatting',
                         'enumeration_indent_invalid',
                         'info',
-                        _u('??????? ???????????? ?????? ?????????? ? ????????? ???????'),
-                        _u('? ???????? ???????????? ???????? ???????? ??????: ') + f'{float(indent):.1f} ??.',
+                        _u('Элемент перечисления должен иметь абзацный отступ'),
+                        _u('У элемента перечисления найден отступ ') + f'{float(indent):.1f} ' + _u('мм.'),
                         IssueLocation(paragraph_index=paragraph_index),
                         _build_standard_reference(standard_id, formatting_rule),
-                        _u('?????????? ???????? ?????? 1,25 ?? ??? ???????? ????????????.'),
+                        _u('Установить абзацный отступ 1,25 см для элемента перечисления.'),
                     )
                 )
     return issues
-
 
 def _check_references_section(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:
     reference_rule = _pick_rule(parsed_standard.rules, object_type='references', constraint_type='required_presence')
