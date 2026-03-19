@@ -323,7 +323,14 @@
             gap: 12px;
         }
 
-        .summary-card {
+        .type-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .summary-card,
+        .type-summary-card {
             padding: 18px;
             min-height: 120px;
             display: grid;
@@ -337,6 +344,27 @@
         .summary-card span {
             color: var(--muted);
         }
+
+        .type-summary-card {
+            padding: 16px 18px;
+            min-height: 108px;
+            display: grid;
+            gap: 8px;
+            border-top: 4px solid transparent;
+        }
+
+        .type-summary-card strong {
+            font-size: 28px;
+        }
+
+        .type-summary-card span {
+            color: var(--muted);
+        }
+
+        .type-summary-card[data-type="structure"] { border-top-color: var(--structure); }
+        .type-summary-card[data-type="formatting"] { border-top-color: var(--formatting); }
+        .type-summary-card[data-type="style"] { border-top-color: var(--style); }
+        .type-summary-card[data-type="logic"] { border-top-color: var(--logic); }
 
         .toolbar {
             display: flex;
@@ -486,6 +514,7 @@
             .hero-grid,
             .controls,
             .summary-grid,
+            .type-summary-grid,
             .issue-grid {
                 grid-template-columns: 1fr;
             }
@@ -532,7 +561,7 @@
                 <div class="upload-box">
                     <div>
                         <div class="upload-title">Файл отчета</div>
-                        <div class="upload-note">Поддерживаются <code>.docx</code>, <code>.md</code>, <code>.txt</code>, <code>.pdf</code>.</div>
+                        <div class="upload-note">Поддерживается <code>.docx</code>.</div>
                     </div>
                     <div class="file-chip" id="document-name">Файл не выбран</div>
                     <input id="document-input" type="file" accept=".docx,.md,.txt,.pdf">
@@ -592,6 +621,7 @@
         </div>
 
         <div class="summary-grid" id="summary-grid"></div>
+        <div class="type-summary-grid" id="type-summary-grid"></div>
 
         <div class="toolbar">
             <div class="filter-row" id="type-filters"></div>
@@ -629,6 +659,7 @@
         resultsPanel: document.getElementById('results-panel'),
         reportCaption: document.getElementById('report-caption'),
         summaryGrid: document.getElementById('summary-grid'),
+        typeSummaryGrid: document.getElementById('type-summary-grid'),
         typeFilters: document.getElementById('type-filters'),
         metaFilters: document.getElementById('meta-filters'),
         issuesList: document.getElementById('issues-list'),
@@ -833,10 +864,10 @@
         const summary = buildClientSummary();
         const dismissedCount = getDismissedIssues().length;
         const cards = [
-            { label: 'Активные замечания', value: summary.total_issues, note: `Документ: ${report.document_id}` },
-            { label: 'Критичность', value: summary.critical, note: `warning: ${summary.warning}, info: ${summary.info}` },
-            { label: 'Автоисправимые', value: summary.fixable, note: `manual: ${summary.total_issues - summary.fixable}` },
-            { label: 'Отклонено', value: dismissedCount, note: `${report.processing_time_ms} ms` },
+            { label: '\u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0437\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u044f', value: summary.total_issues, note: `\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442: ${report.document_id}` },
+            { label: '\u041a\u0440\u0438\u0442\u0438\u0447\u043d\u043e\u0441\u0442\u044c', value: summary.critical, note: `warning: ${summary.warning}, info: ${summary.info}` },
+            { label: '\u0410\u0432\u0442\u043e\u0438\u0441\u043f\u0440\u0430\u0432\u0438\u043c\u044b\u0435', value: summary.fixable, note: `manual: ${summary.total_issues - summary.fixable}` },
+            { label: '\u041e\u0442\u043a\u043b\u043e\u043d\u0435\u043d\u043e', value: dismissedCount, note: `${(Number(report.processing_time_ms || 0) / 1000).toFixed(1)} s` },
         ];
 
         elements.summaryGrid.innerHTML = cards.map((card) => `
@@ -847,11 +878,26 @@
             </article>
         `).join('');
 
+        const typeCards = ['structure', 'formatting', 'style', 'logic'].map((type) => ({
+            type,
+            label: TYPE_LABELS[type] || type,
+            value: summary.by_type[type] || 0,
+            note: type === 'logic' ? '\u0422\u043e\u043b\u044c\u043a\u043e \u0440\u0443\u0447\u043d\u0430\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430' : '\u0412\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u0432 \u043e\u0442\u0447\u0435\u0442 \u0438 \u0444\u0438\u043b\u044c\u0442\u0440\u044b',
+        }));
+
+        elements.typeSummaryGrid.innerHTML = typeCards.map((card) => `
+            <article class="type-summary-card" data-type="${escapeHtml(card.type)}">
+                <span class="metric-label">${escapeHtml(card.label)}</span>
+                <strong>${escapeHtml(String(card.value))}</strong>
+                <span>${escapeHtml(card.note)}</span>
+            </article>
+        `).join('');
+
         const parsed = report.parsed_document;
         if (parsed) {
-            elements.reportCaption.textContent = `Стандарт: ${report.standard_id}. Режим: chat ${state.chatMode}, embed ${state.embedMode}. Активных замечаний: ${summary.total_issues}.`;
+            elements.reportCaption.textContent = `\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442: ${report.standard_id}. \u0420\u0435\u0436\u0438\u043c: chat ${state.chatMode}, embed ${state.embedMode}. \u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u0437\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u0439: ${summary.total_issues}.`;
         } else {
-            elements.reportCaption.textContent = `Стандарт: ${report.standard_id}. Режим: chat ${state.chatMode}, embed ${state.embedMode}.`;
+            elements.reportCaption.textContent = `\u0421\u0442\u0430\u043d\u0434\u0430\u0440\u0442: ${report.standard_id}. \u0420\u0435\u0436\u0438\u043c: chat ${state.chatMode}, embed ${state.embedMode}.`;
         }
     }
 
@@ -992,7 +1038,7 @@
     }
 
     function isIssueFixable(issue) {
-        return Boolean(issue && issue.suggestion);
+        return Boolean(issue && issue.type !== 'logic' && issue.suggestion);
     }
 
     function formatLocation(location) {

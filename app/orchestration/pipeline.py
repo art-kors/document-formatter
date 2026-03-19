@@ -1,4 +1,4 @@
-from time import perf_counter
+﻿from time import perf_counter
 from typing import Dict, List, Optional, Tuple
 
 from app.agents.logic_agent.service import LogicAgentService
@@ -34,7 +34,7 @@ class DocumentPipeline:
         )
         self.structure_agent = StructureAgentService()
         self.style_agent = StyleAgentService(llm_provider=llm_provider)
-        self.logic_agent = LogicAgentService()
+        self.logic_agent = LogicAgentService(llm_provider=llm_provider)
 
     def process_instruction(self, standard_text: str, standard_name: str) -> Dict:
         return self.rag_service.process_instruction(
@@ -91,3 +91,4 @@ class DocumentPipeline:
     def _validate_standard(self, standard_id: str) -> None:
         if not self.registry.get(standard_id):
             raise FileNotFoundError(f"Unknown standard_id: {standard_id}")
+

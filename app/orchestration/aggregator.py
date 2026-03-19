@@ -29,7 +29,7 @@ def collect_issues(results: Iterable[AgentResult]) -> List[Issue]:
 def build_summary(issues: List[Issue]) -> Summary:
     severity_counts = Counter(issue.severity for issue in issues)
     type_counts = Counter(issue.type for issue in issues)
-    fixable = sum(1 for issue in issues if issue.suggestion)
+    fixable = sum(1 for issue in issues if issue.suggestion and issue.type != "logic")
     return Summary(
         total_issues=len(issues),
         critical=severity_counts.get("critical", 0),
