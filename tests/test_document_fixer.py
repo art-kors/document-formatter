@@ -1,4 +1,4 @@
-from io import BytesIO
+﻿from io import BytesIO
 from docx import Document as WordDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Mm, Pt, RGBColor
@@ -32,7 +32,7 @@ class DocumentFixerTests(unittest.TestCase):
 
         self.assertTrue(any(section.title == '\u0412\u044b\u0432\u043e\u0434\u044b' for section in fixed.sections))
         self.assertTrue(any('\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435' in section.title for section in fixed.sections))
-        self.assertTrue(any('\u0421\u043f\u0438\u0441\u043e\u043a \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u043d\u044b\u0445 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432' in section.title for section in fixed.sections))
+        self.assertTrue(any('\u0421\u041f\u0418\u0421\u041e\u041a \u0418\u0421\u041f\u041e\u041b\u042c\u0417\u041e\u0412\u0410\u041d\u041d\u042b\u0425 \u0418\u0421\u0422\u041e\u0427\u041d\u0418\u041a\u041e\u0412' in section.title for section in fixed.sections))
         first_section = fixed.sections[0]
         self.assertIn('\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0438', first_section.text.lower())
 
@@ -49,7 +49,7 @@ class DocumentFixerTests(unittest.TestCase):
         with zipfile.ZipFile(BytesIO(content)) as archive:
             xml = archive.read('word/document.xml').decode('utf-8')
         self.assertNotIn('\u0420\u0438\u0441\u0443\u043d\u043e\u043a 1 -', xml)
-        self.assertIn('\u0421\u043f\u0438\u0441\u043e\u043a \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u043d\u044b\u0445 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432', xml)
+        self.assertIn('\u0421\u041f\u0418\u0421\u041e\u041a \u0418\u0421\u041f\u041e\u041b\u042c\u0417\u041e\u0412\u0410\u041d\u041d\u042b\u0425 \u0418\u0421\u0422\u041e\u0427\u041d\u0418\u041a\u041e\u0412', xml)
 
 
     def test_apply_fixes_normalizes_abbreviated_figure_caption(self) -> None:
@@ -172,14 +172,14 @@ class DocumentFixerTests(unittest.TestCase):
 
     def test_apply_fixes_to_source_docx_renumbers_section_headings(self) -> None:
         source = WordDocument()
-        source.add_paragraph('2 Введение')
-        source.add_paragraph('Текст введения')
-        source.add_paragraph('2.2 Основная часть')
-        source.add_paragraph('Текст основной части')
-        source.add_paragraph('4 Заключение')
-        source.add_paragraph('Текст заключения')
-        source.add_paragraph('5 Список использованных источников')
-        source.add_paragraph('[1] Источник')
+        source.add_paragraph('2 Р’РІРµРґРµРЅРёРµ')
+        source.add_paragraph('РўРµРєСЃС‚ РІРІРµРґРµРЅРёСЏ')
+        source.add_paragraph('2.2 РћСЃРЅРѕРІРЅР°СЏ С‡Р°СЃС‚СЊ')
+        source.add_paragraph('РўРµРєСЃС‚ РѕСЃРЅРѕРІРЅРѕР№ С‡Р°СЃС‚Рё')
+        source.add_paragraph('4 Р—Р°РєР»СЋС‡РµРЅРёРµ')
+        source.add_paragraph('РўРµРєСЃС‚ Р·Р°РєР»СЋС‡РµРЅРёСЏ')
+        source.add_paragraph('5 РЎРїРёСЃРѕРє РёСЃРїРѕР»СЊР·РѕРІР°РЅРЅС‹С… РёСЃС‚РѕС‡РЅРёРєРѕРІ')
+        source.add_paragraph('[1] РСЃС‚РѕС‡РЅРёРє')
 
         buffer = BytesIO()
         source.save(buffer)
@@ -199,11 +199,109 @@ class DocumentFixerTests(unittest.TestCase):
         fixed_doc = WordDocument(BytesIO(fixed_bytes))
         headings = [paragraph.text for paragraph in fixed_doc.paragraphs if paragraph.text and paragraph.text[0].isdigit()]
 
-        self.assertIn('1 Введение', headings)
-        self.assertIn('1.1 Основная часть', headings)
-        self.assertIn('2 Заключение', headings)
-        self.assertIn('3 Список использованных источников', headings)
+        self.assertIn('1 Р’РІРµРґРµРЅРёРµ', headings)
+        self.assertIn('1.1 РћСЃРЅРѕРІРЅР°СЏ С‡Р°СЃС‚СЊ', headings)
+        self.assertIn('2 Р—Р°РєР»СЋС‡РµРЅРёРµ', headings)
 
+
+    def test_apply_fixes_to_source_docx_fixes_formula_layout_number_and_reference(self) -> None:
+        source = WordDocument()
+        source.add_paragraph('В тексте далее используется по формуле 1.')
+        formula = source.add_paragraph('F(x) = a + b + c 1')
+        formula.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        source.add_paragraph('где: a - коэффициент')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='formula_fix.docx',
+            standard_id='gost_7_32_2017',
+            document_id='formula_fix',
+        )
+        result = self.pipeline.analyze_document(parsed)
+
+        subtypes = {issue.subtype for issue in result.issues}
+        self.assertIn('formula_not_centered', subtypes)
+        self.assertIn('formula_number_format_error', subtypes)
+        self.assertIn('formula_where_colon', subtypes)
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+
+        fixed_formula = next(paragraph for paragraph in fixed_doc.paragraphs if 'F(x)' in paragraph.text)
+        fixed_reference = fixed_doc.paragraphs[0]
+        fixed_explanation = fixed_doc.paragraphs[2]
+
+        self.assertEqual(fixed_formula.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertEqual(fixed_formula.text, 'F(x) = a + b + c (1)')
+        self.assertIn('формуле (1)', fixed_reference.text)
+        self.assertEqual(fixed_explanation.text, 'где a - коэффициент')
+
+    
+    def test_apply_fixes_to_source_docx_moves_inline_formula_to_separate_centered_paragraph(self) -> None:
+        source = WordDocument()
+        source.add_paragraph('\u0420\u0430\u0441\u0447\u0435\u0442 \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u044e\u0442 \u043f\u043e \u0432\u044b\u0440\u0430\u0436\u0435\u043d\u0438\u044e F(x) = a + b + c.')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='inline_formula.docx',
+            standard_id='gost_7_32_2017',
+            document_id='inline_formula',
+        )
+        result = self.pipeline.analyze_document(parsed)
+
+        subtypes = {issue.subtype for issue in result.issues}
+        self.assertIn('formula_not_standalone', subtypes)
+        self.assertIn('missing_formula_number', subtypes)
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+
+        self.assertEqual(fixed_doc.paragraphs[0].text, '\u0420\u0430\u0441\u0447\u0435\u0442 \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u044e\u0442 \u043f\u043e \u0432\u044b\u0440\u0430\u0436\u0435\u043d\u0438\u044e')
+        self.assertEqual(fixed_doc.paragraphs[1].text, 'F(x) = a + b + c (1)')
+        self.assertEqual(fixed_doc.paragraphs[1].alignment, WD_ALIGN_PARAGRAPH.CENTER)
+
+    def test_apply_fixes_to_source_docx_keeps_multiple_formulas_and_numbers_them_sequentially(self) -> None:
+        source = WordDocument()
+        source.add_paragraph('\u042d\u043d\u0435\u0440\u0433\u0438\u044f \u0432\u044b\u0447\u0438\u0441\u043b\u044f\u0435\u0442\u0441\u044f \u043f\u043e \u0444\u043e\u0440\u043c\u0443\u043b\u0435: E = mc2')
+        source.add_paragraph('\u0433\u0434\u0435: E \u2014 \u044d\u043d\u0435\u0440\u0433\u0438\u044f; m \u2014 \u043c\u0430\u0441\u0441\u0430; c \u2014 \u0441\u043a\u043e\u0440\u043e\u0441\u0442\u044c \u0441\u0432\u0435\u0442\u0430 \u0432 \u0432\u0430\u043a\u0443\u0443\u043c\u0435.')
+        source.add_paragraph('\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u0435 \u0441\u043e\u043e\u0442\u043d\u043e\u0448\u0435\u043d\u0438\u0435 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u043f\u0440\u0438 \u0432\u044b\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u0438 \u0441\u0440\u0435\u0434\u043d\u0435\u0439 \u0432\u0435\u043b\u0438\u0447\u0438\u043d\u044b \u043f\u043e \u0444\u043e\u0440\u043c\u0443\u043b\u0435: x = (x1 + x2 + x3) / n')
+        source.add_paragraph('\u0433\u0434\u0435 n \u2014 \u043a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u043d\u0430\u0431\u043b\u044e\u0434\u0435\u043d\u0438\u0439, x1, x2, x3 \u2014 \u044d\u043b\u0435\u043c\u0435\u043d\u0442\u044b \u0432\u044b\u0431\u043e\u0440\u043a\u0438.')
+        source.add_paragraph('D = (x1 + x2) / n')
+        source.add_paragraph('Q = a / b')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='formula_sequence.docx',
+            standard_id='gost_7_32_2017',
+            document_id='formula_sequence',
+        )
+        result = self.pipeline.analyze_document(parsed)
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+
+        texts = [paragraph.text for paragraph in fixed_doc.paragraphs]
+        self.assertIn('\u042d\u043d\u0435\u0440\u0433\u0438\u044f \u0432\u044b\u0447\u0438\u0441\u043b\u044f\u0435\u0442\u0441\u044f \u043f\u043e \u0444\u043e\u0440\u043c\u0443\u043b\u0435 (1)', texts)
+        self.assertIn('E = mc2 (1)', texts)
+        self.assertIn('\u0433\u0434\u0435 E \u2014 \u044d\u043d\u0435\u0440\u0433\u0438\u044f; m \u2014 \u043c\u0430\u0441\u0441\u0430; c \u2014 \u0441\u043a\u043e\u0440\u043e\u0441\u0442\u044c \u0441\u0432\u0435\u0442\u0430 \u0432 \u0432\u0430\u043a\u0443\u0443\u043c\u0435.', texts)
+        self.assertIn('\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u0435 \u0441\u043e\u043e\u0442\u043d\u043e\u0448\u0435\u043d\u0438\u0435 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u043f\u0440\u0438 \u0432\u044b\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u0438 \u0441\u0440\u0435\u0434\u043d\u0435\u0439 \u0432\u0435\u043b\u0438\u0447\u0438\u043d\u044b \u043f\u043e \u0444\u043e\u0440\u043c\u0443\u043b\u0435 (2)', texts)
+        self.assertIn('x = (x1 + x2 + x3) / n (2)', texts)
+        self.assertIn('D = (x1 + x2) / n (3)', texts)
+        self.assertIn('Q = a / b (4)', texts)
+        self.assertEqual(sum(1 for value in texts if 'mc2' in value), 1)
+        self.assertEqual(sum(1 for value in texts if 'x1 + x2 + x3' in value), 1)
+        self.assertEqual(sum(1 for value in texts if 'Q = a / b' in value), 1)
 
     def test_apply_fixes_to_source_docx_updates_typography_and_margins(self) -> None:
         source = WordDocument()
@@ -214,7 +312,7 @@ class DocumentFixerTests(unittest.TestCase):
         section.right_margin = Mm(10)
         section.top_margin = Mm(15)
         section.bottom_margin = Mm(15)
-        heading = source.add_paragraph('1 ???????? ?????')
+        heading = source.add_paragraph('1 РћСЃРЅРѕРІРЅР°СЏ С‡Р°СЃС‚СЊ')
         heading_run = heading.runs[0]
         heading_run.font.size = Pt(14)
         heading_run.font.name = 'Calibri'
@@ -251,7 +349,7 @@ class DocumentFixerTests(unittest.TestCase):
         fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
         fixed_doc = WordDocument(BytesIO(fixed_bytes))
         fixed_section = fixed_doc.sections[0]
-        fixed_heading = next(paragraph for paragraph in fixed_doc.paragraphs if '1 ???????? ?????' in paragraph.text)
+        fixed_heading = next(paragraph for paragraph in fixed_doc.paragraphs if '1 РћСЃРЅРѕРІРЅР°СЏ С‡Р°СЃС‚СЊ' in paragraph.text)
         fixed_heading_run = fixed_heading.runs[0]
         fixed_body = next(paragraph for paragraph in fixed_doc.paragraphs if '??? ???????? ?????' in paragraph.text)
         fixed_run = fixed_body.runs[0]
@@ -267,6 +365,7 @@ class DocumentFixerTests(unittest.TestCase):
         self.assertAlmostEqual(fixed_heading_run.font.size.pt, 12.0, places=1)
         self.assertEqual(fixed_heading_run.font.name, 'Times New Roman')
         self.assertEqual(str(fixed_heading_run.font.color.rgb), '000000')
+        self.assertTrue(bool(fixed_heading_run.font.bold))
         self.assertAlmostEqual(fixed_body.paragraph_format.first_line_indent.mm, 12.5, places=1)
         self.assertAlmostEqual(float(fixed_body.paragraph_format.line_spacing), 1.5, places=1)
         self.assertAlmostEqual(fixed_run.font.size.pt, 12.0, places=1)
@@ -281,5 +380,165 @@ class DocumentFixerTests(unittest.TestCase):
         self.assertEqual(str(fixed_second_run.font.color.rgb), '000000')
 
 
+    def test_apply_fixes_to_source_docx_moves_table_caption_and_cleans_headers_in_appendix(self) -> None:
+        from docx.oxml.table import CT_Tbl
+        from docx.oxml.text.paragraph import CT_P
+
+        source = WordDocument()
+        source.add_paragraph('\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0410 - \u041c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u044b')
+        source.add_paragraph('\u0412 \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0438 \u0410 \u043f\u0440\u0438\u0432\u0435\u0434\u0435\u043d\u0430 \u0442\u0430\u0431\u043b\u0438\u0446\u0430 \u0410.1.')
+        table = source.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = '\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u0435\u043b\u044c.'
+        table.rows[0].cells[1].text = '\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u0435.'
+        table.rows[1].cells[0].text = '\u0421\u043a\u043e\u0440\u043e\u0441\u0442\u044c'
+        table.rows[1].cells[1].text = '10'
+        source.add_paragraph('\u0422\u0430\u0431\u043b\u0438\u0446\u0430 1 - \u0414\u0430\u043d\u043d\u044b\u0435.')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='appendix_table.docx',
+            standard_id='gost_7_32_2017',
+            document_id='appendix_table',
+        )
+        result = self.pipeline.analyze_document(parsed)
+
+        self.assertIn('table_caption_below_table', [issue.subtype for issue in result.issues])
+        self.assertIn('invalid_table_header_punctuation', [issue.subtype for issue in result.issues])
+        self.assertIn('appendix_table_caption_format', [issue.subtype for issue in result.issues])
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+
+        body_kinds = []
+        body_texts = []
+        for child in fixed_doc.element.body.iterchildren():
+            if isinstance(child, CT_P):
+                paragraph = next((p for p in fixed_doc.paragraphs if p._p is child), None)
+                body_kinds.append('p')
+                body_texts.append(paragraph.text if paragraph is not None else '')
+            elif isinstance(child, CT_Tbl):
+                body_kinds.append('tbl')
+                body_texts.append('<table>')
+
+        table_pos = body_kinds.index('tbl')
+        caption_pos = body_texts.index('\u0422\u0430\u0431\u043b\u0438\u0446\u0430 \u0410.1 - \u0414\u0430\u043d\u043d\u044b\u0435')
+        self.assertLess(caption_pos, table_pos)
+        self.assertEqual(fixed_doc.tables[0].rows[0].cells[0].text, '\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u0435\u043b\u044c')
+        self.assertEqual(fixed_doc.tables[0].rows[0].cells[1].text, '\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u0435')
+
+
+    def test_apply_fixes_to_source_docx_formats_headings_appendix_and_table_header_alignment(self) -> None:
+        source = WordDocument()
+        main_heading = source.add_paragraph('1 \u041e\u0441\u043d\u043e\u0432\u043d\u0430\u044f \u0447\u0430\u0441\u0442\u044c')
+        main_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        main_heading.paragraph_format.first_line_indent = Mm(0)
+        main_heading.runs[0].font.color.rgb = RGBColor(0, 0, 255)
+
+        source.add_paragraph('\u0422\u0435\u043a\u0441\u0442 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0447\u0430\u0441\u0442\u0438')
+
+        refs_heading = source.add_paragraph('3 \u0421\u043f\u0438\u0441\u043e\u043a \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u043d\u044b\u0445 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432')
+        refs_heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        refs_heading.paragraph_format.first_line_indent = Mm(12.5)
+        refs_heading.runs[0].font.color.rgb = RGBColor(0, 0, 255)
+
+        appendix_heading = source.add_paragraph('\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0410 - \u041c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u044b')
+        appendix_heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+        table = source.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = '\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u0435\u043b\u044c'
+        table.rows[0].cells[1].text = '\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u0435'
+        table.rows[1].cells[0].text = '\u0421\u043a\u043e\u0440\u043e\u0441\u0442\u044c'
+        table.rows[1].cells[1].text = '10'
+        for cell in table.rows[0].cells:
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        source.add_paragraph('\u0422\u0430\u0431\u043b\u0438\u0446\u0430 1 - \u0414\u0430\u043d\u043d\u044b\u0435')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='heading_table_layout.docx',
+            standard_id='gost_7_32_2017',
+            document_id='heading_table_layout',
+        )
+        result = self.pipeline.analyze_document(parsed)
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+
+        fixed_main = next(paragraph for paragraph in fixed_doc.paragraphs if paragraph.text == '1 \u041e\u0441\u043d\u043e\u0432\u043d\u0430\u044f \u0447\u0430\u0441\u0442\u044c')
+        fixed_refs = next(paragraph for paragraph in fixed_doc.paragraphs if paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER and paragraph.text and paragraph.text == paragraph.text.upper() and '\u041f\u0420\u0418\u041b\u041e\u0416\u0415\u041d\u0418\u0415' not in paragraph.text)
+        fixed_appendix = next(paragraph for paragraph in fixed_doc.paragraphs if paragraph.text == '\u041f\u0420\u0418\u041b\u041e\u0416\u0415\u041d\u0418\u0415 \u0410')
+        fixed_appendix_title = next(paragraph for paragraph in fixed_doc.paragraphs if paragraph.text == '\u041c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u044b')
+
+        self.assertEqual(fixed_main.alignment, WD_ALIGN_PARAGRAPH.LEFT)
+        self.assertAlmostEqual(fixed_main.paragraph_format.first_line_indent.mm, 12.5, places=1)
+        self.assertEqual(str(fixed_main.runs[0].font.color.rgb), '000000')
+        self.assertTrue(bool(fixed_main.runs[0].font.bold))
+
+        self.assertEqual(fixed_refs.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertAlmostEqual(fixed_refs.paragraph_format.first_line_indent.mm, 0.0, places=1)
+        self.assertEqual(str(fixed_refs.runs[0].font.color.rgb), '000000')
+        self.assertTrue(bool(fixed_refs.runs[0].font.bold))
+
+        self.assertEqual(fixed_appendix.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertEqual(fixed_appendix_title.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertTrue(bool(fixed_appendix.runs[0].font.bold))
+        self.assertTrue(bool(fixed_appendix_title.runs[0].font.bold))
+
+        for cell in fixed_doc.tables[0].rows[0].cells:
+            for paragraph in cell.paragraphs:
+                self.assertEqual(paragraph.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+
+    def test_apply_fixes_to_source_docx_does_not_rewrite_native_math_formula_text(self) -> None:
+        source = WordDocument()
+        source.add_paragraph('?????? ????????? ?? ??????? (4).')
+        formula = source.add_paragraph(r'D = \frac{\sum_{i=1}^{n} (x_i - \bar{x})^2}{n} (4)')
+        source.add_paragraph('??????????? ???????')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='native_math_guard.docx',
+            standard_id='gost_7_32_2017',
+            document_id='native_math_guard',
+        )
+        parsed.meta.extras['docx_formulas'] = [
+            {
+                'paragraph_index': 2,
+                'text': r'D = \frac{\sum_{i=1}^{n} (x_i - \bar{x})^2}{n} (4)',
+                'alignment': 'left',
+                'has_math_xml': True,
+                'is_standalone': True,
+                'equation_number': '4',
+                'raw_equation_number': '',
+                'prev_blank': True,
+                'next_blank': True,
+                'prev_text': '?????? ????????? ?? ??????? (4).',
+                'next_text': '??????????? ???????',
+                'next_paragraph_index': 3,
+                'section_id': None,
+                'section_title': '',
+                'appendix_letter': '',
+            }
+        ]
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, [])
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+
+        self.assertEqual(fixed_doc.paragraphs[1].text, r'D = \frac{\sum_{i=1}^{n} (x_i - \bar{x})^2}{n} (4)')
+
 if __name__ == '__main__':
     unittest.main()
+
+

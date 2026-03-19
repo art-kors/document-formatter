@@ -165,6 +165,40 @@ class GraphRAGCheckerTests(unittest.TestCase):
 
         self.assertIn("invalid_table_caption_format", subtypes)
 
+    def test_table_position_headers_and_appendix_create_issues(self) -> None:
+        document = DocumentInput(
+            document_id="doc_table_meta",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_tables_meta": [
+                        {
+                            "table_index": 1,
+                            "caption_paragraph_index": 5,
+                            "caption_position": "below",
+                            "header_cells": ["??????????.", "????????."],
+                            "appendix_letter": "?",
+                            "section_title": "Приложение А - Материалы",
+                        }
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_app", number="?", title="Приложение А - Материалы")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_app", text="? ?????????? ? ????????? ?????????????? ??????.", position=Position(page=5, paragraph_index=1))],
+            tables=[TableItem(id="tbl_1", caption="Таблица 1 - Данные", position=Position(page=5, paragraph_index=5))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+
+        self.assertIn("table_caption_below_table", subtypes)
+        self.assertIn("invalid_table_header_punctuation", subtypes)
+        self.assertIn("appendix_table_caption_format", subtypes)
+
+
     def test_missing_references_section_creates_issue(self) -> None:
         document = DocumentInput(
             document_id="doc_refs",
@@ -235,7 +269,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
                         {"paragraph_index": 6, "text": "????????: ??????? ?????? ??8-11", "alignment": "right", "style": "Normal"},
                         {"paragraph_index": 7, "text": "????????????: ?????? ?.?.", "alignment": "right", "style": "Normal"},
                         {"paragraph_index": 8, "text": "?????? 2026", "alignment": "center", "style": "Normal"},
-                        {"paragraph_index": 9, "text": "??????????", "alignment": "center", "style": "Heading 1"},
+                        {"paragraph_index": 9, "text": "Показатель", "alignment": "center", "style": "Heading 1"},
                     ],
                 },
             ),
@@ -292,8 +326,8 @@ class GraphRAGCheckerTests(unittest.TestCase):
                 },
             ),
             sections=[
-                Section(id="sec_1", number="1", title="????????", text="?????"),
-                Section(id="sec_2", number="2", title="???????? ?????", text="?????"),
+                Section(id="sec_1", number="1", title="Значение", text="?????"),
+                Section(id="sec_2", number="2", title="Основная часть", text="?????"),
             ],
             paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="?????", position=Position(page=1, paragraph_index=1))],
         )
@@ -317,7 +351,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
                     ],
                 },
             ),
-            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            sections=[Section(id="sec_1", number="1", title="Основная часть")],
             paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="????? ???????", position=Position(page=1, paragraph_index=1))],
         )
 
@@ -338,7 +372,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
                     ],
                 },
             ),
-            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            sections=[Section(id="sec_1", number="1", title="Основная часть")],
             paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="????? ???????", position=Position(page=1, paragraph_index=1))],
         )
 
@@ -382,7 +416,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
                     ],
                 },
             ),
-            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            sections=[Section(id="sec_1", number="1", title="Основная часть")],
             paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="??? ???????? ????? ? ????????? ???????????? ??????????? ??? ????????.", position=Position(page=1, paragraph_index=1))],
         )
 
@@ -401,7 +435,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
             document_id="doc_figure_period",
             standard_id=self.standard_id,
             meta=DocumentMeta(filename="report.docx", title="Report"),
-            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            sections=[Section(id="sec_1", number="1", title="Основная часть")],
             paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="??? ???????? ?? ??????? 1, ????? ????????.", position=Position(page=1, paragraph_index=1))],
             figures=[FigureItem(id="fig_1", caption="??????? 1 - ??????????? ???????.", position=Position(page=2, paragraph_index=2))],
         )
@@ -424,7 +458,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
                     ],
                 },
             ),
-            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            sections=[Section(id="sec_1", number="1", title="Основная часть")],
             paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="? ?????? ???????? ??????? 1.", position=Position(page=1, paragraph_index=1))],
             figures=[FigureItem(id="fig_1", caption="??????? 1 - ??????????? ???????", position=Position(page=1, paragraph_index=2))],
         )
@@ -437,7 +471,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
             document_id="doc_figure_reference_order",
             standard_id=self.standard_id,
             meta=DocumentMeta(filename="report.docx", title="Report"),
-            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            sections=[Section(id="sec_1", number="1", title="Основная часть")],
             paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="???????? ??????????? ??? ?????? ?? ???????.", position=Position(page=1, paragraph_index=1))],
             figures=[FigureItem(id="fig_1", caption="??????? 1 - ??????????? ???????", position=Position(page=1, paragraph_index=2))],
         )
@@ -450,7 +484,7 @@ class GraphRAGCheckerTests(unittest.TestCase):
             document_id="doc_figure_numbering",
             standard_id=self.standard_id,
             meta=DocumentMeta(filename="report.docx", title="Report"),
-            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            sections=[Section(id="sec_1", number="1", title="Основная часть")],
             paragraphs=[
                 Paragraph(id="p_1", section_id="sec_1", text="??? ???????? ?? ??????? 1.", position=Position(page=1, paragraph_index=1)),
                 Paragraph(id="p_2", section_id="sec_1", text="??? ???????? ?? ??????? 3.", position=Position(page=2, paragraph_index=3)),
@@ -477,6 +511,148 @@ class GraphRAGCheckerTests(unittest.TestCase):
 
         result = analyze_document_against_standard(document, self.standard_id)
         self.assertNotIn("invalid_figure_caption_format", [issue.subtype for issue in result.issues])
+
+
+    def test_heading_appendix_and_table_header_alignment_issues_are_detected(self) -> None:
+        document = DocumentInput(
+            document_id="doc_heading_layout",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "1 ???????? ?????", "alignment": "center", "style": "Heading 1", "first_line_indent_mm": 0.0, "has_non_black_text": True},
+                        {"paragraph_index": 2, "text": "3 ?????? ?????????????? ??????????", "alignment": "left", "style": "Heading 1", "first_line_indent_mm": 12.5, "has_non_black_text": True},
+                        {"paragraph_index": 3, "text": "Приложение А - Материалы", "alignment": "left", "style": "Heading 1", "first_line_indent_mm": 0.0, "has_non_black_text": False},
+                    ],
+                    "section_headings": {
+                        "sec_main": {"paragraph_index": 1, "text": "1 ???????? ?????", "alignment": "center", "style_name": "Heading 1"},
+                        "sec_refs": {"paragraph_index": 2, "text": "3 ?????? ?????????????? ??????????", "alignment": "left", "style_name": "Heading 1"},
+                        "sec_app": {"paragraph_index": 3, "text": "Приложение А - Материалы", "alignment": "left", "style_name": "Heading 1"},
+                    },
+                    "docx_tables_meta": [
+                        {"table_index": 1, "caption_paragraph_index": 4, "caption_position": "above", "header_cells": ["Показатель", "Значение"], "appendix_letter": None},
+                    ],
+                    "docx_table_paragraphs": [
+                        {"paragraph_index": 10000, "text": "Показатель", "alignment": "left", "style": "Normal", "table_index": 1, "row_index": 1, "cell_index": 1},
+                        {"paragraph_index": 10001, "text": "Значение", "alignment": "left", "style": "Normal", "table_index": 1, "row_index": 1, "cell_index": 2},
+                    ],
+                },
+            ),
+            sections=[
+                Section(id="sec_main", number="1", title="Основная часть", level=1),
+                Section(id="sec_refs", number="3", title="Список использованных источников", level=1),
+                Section(id="sec_app", number="", title="Приложение А - Материалы", level=1),
+            ],
+            tables=[TableItem(id="tbl_1", caption="Таблица 1 - Данные", position=Position(page=1, paragraph_index=4))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertIn("main_heading_centered", subtypes)
+        self.assertIn("heading_invalid_font_color", subtypes)
+        self.assertIn("structural_heading_numbered", subtypes)
+        self.assertIn("structural_heading_not_uppercase", subtypes)
+        self.assertIn("structural_heading_not_centered", subtypes)
+        self.assertIn("structural_heading_invalid_font_color", subtypes)
+        self.assertIn("appendix_heading_not_centered", subtypes)
+        self.assertIn("appendix_heading_single_line", subtypes)
+        self.assertIn("table_header_alignment", subtypes)
+
+    def test_formula_issues_are_detected_from_docx_formula_meta(self) -> None:
+        document = DocumentInput(
+            document_id='doc_formula_issues',
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename='report.docx',
+                title='Report',
+                extras={
+                    'source_format': 'docx',
+                    'docx_formulas': [
+                        {
+                            'paragraph_index': 3,
+                            'text': 'E = mc2 (2)',
+                            'alignment': 'left',
+                            'has_math_xml': False,
+                            'is_standalone': True,
+                            'equation_number': '2',
+                            'raw_equation_number': '',
+                            'prev_blank': False,
+                            'next_blank': False,
+                            'prev_text': 'Предыдущий абзац',
+                            'next_text': 'где: E - энергия',
+                            'section_id': 'sec_1',
+                            'appendix_letter': '',
+                        }
+                    ],
+                },
+            ),
+            sections=[Section(id='sec_1', number='1', title='Основная часть')],
+            paragraphs=[
+                Paragraph(id='p_1', section_id='sec_1', text='Расчет выполняют по формуле 2.', position=Position(page=1, paragraph_index=1)),
+                Paragraph(id='p_2', section_id='sec_1', text='Предыдущий абзац', position=Position(page=1, paragraph_index=2)),
+            ],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertIn('formula_not_centered', subtypes)
+        self.assertIn('formula_missing_blank_lines', subtypes)
+        self.assertIn('invalid_formula_reference_format', subtypes)
+        self.assertIn('formula_where_colon', subtypes)
+
+    def test_valid_formula_does_not_create_formula_issues(self) -> None:
+        document = DocumentInput(
+            document_id='doc_formula_valid',
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename='report.docx',
+                title='Report',
+                extras={
+                    'source_format': 'docx',
+                    'docx_formulas': [
+                        {
+                            'paragraph_index': 3,
+                            'text': 'E = mc2 (1)',
+                            'alignment': 'center',
+                            'has_math_xml': False,
+                            'is_standalone': True,
+                            'equation_number': '1',
+                            'raw_equation_number': '',
+                            'prev_blank': True,
+                            'next_blank': True,
+                            'prev_text': '',
+                            'next_text': 'где E - энергия',
+                            'section_id': 'sec_1',
+                            'appendix_letter': '',
+                        }
+                    ],
+                },
+            ),
+            sections=[Section(id='sec_1', number='1', title='Основная часть')],
+            paragraphs=[
+                Paragraph(id='p_1', section_id='sec_1', text='Расчет выполняют по формуле (1).', position=Position(page=1, paragraph_index=1)),
+            ],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        formula_subtypes = {
+            'formula_not_standalone',
+            'formula_not_centered',
+            'formula_missing_blank_lines',
+            'missing_formula_number',
+            'formula_number_format_error',
+            'formula_numbering_error',
+            'appendix_formula_numbering_error',
+            'missing_formula_reference',
+            'invalid_formula_reference_format',
+            'formula_where_colon',
+            'formula_explanation_format_error',
+            'formula_break_invalid',
+        }
+        self.assertTrue(formula_subtypes.isdisjoint({issue.subtype for issue in result.issues}))
 
 
 if __name__ == "__main__":

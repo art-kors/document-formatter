@@ -142,5 +142,30 @@ class DocumentToSchemaTests(unittest.TestCase):
         self.assertIsNotNone(document.meta.extras['docx_sections'][0]['left_margin_mm'])
 
 
+    def test_parse_docx_to_document_extracts_formula_metadata(self) -> None:
+        source = Document()
+        source.add_paragraph('1 ????????')
+        source.add_paragraph('? ??????? (1) ???????? ??????????? ??????????.')
+        formula = source.add_paragraph('E = mc2 (1)')
+        formula.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        source.add_paragraph('??? E ? ???????')
+
+        buffer = BytesIO()
+        source.save(buffer)
+
+        document = parse_docx_to_document(
+            buffer.getvalue(),
+            filename='report.docx',
+            standard_id='gost_7_32_2017',
+            document_id='doc_formula_meta',
+        )
+
+        formulas = document.meta.extras.get('docx_formulas', [])
+        self.assertEqual(len(formulas), 1)
+        self.assertEqual(formulas[0]['equation_number'], '1')
+        self.assertEqual(formulas[0]['alignment'], 'center')
+        self.assertEqual(formulas[0]['next_text'], '??? E ? ???????')
+
+
 if __name__ == "__main__":
     unittest.main()

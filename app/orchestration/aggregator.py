@@ -69,6 +69,7 @@ def _issue_signature(issue: Issue) -> Tuple:
         issue.subtype or issue.message,
         location.section_id,
         location.paragraph_id,
+        location.paragraph_index,
         location.page,
         rule_id,
     )
