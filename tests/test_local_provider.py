@@ -1,5 +1,6 @@
-import json
+﻿import json
 import os
+import shutil
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -47,32 +48,65 @@ class LocalProviderTests(unittest.TestCase):
     def tearDown(self) -> None:
         dependencies._chat_provider = None
         dependencies._embedding_provider = None
+        cache_root = Path('.cache_test_runtime')
+        if cache_root.exists():
+            shutil.rmtree(cache_root)
 
     def test_embed_is_non_empty_and_stable(self) -> None:
         provider = LocalProvider(encoder=FakeSentenceTransformer())
-        left = provider.embed("????????? ?????? ?????? ?????????? ?????????? ??????????")
-        right = provider.embed("????????? ?????? ?????? ?????????? ?????????? ??????????")
-        other = provider.embed("?????? ????? ?????? ???????? ?????? ??????")
+        left = provider.embed("одинаковый текст для локальных эмбеддингов")
+        right = provider.embed("одинаковый текст для локальных эмбеддингов")
+        other = provider.embed("другой текст для проверки вектора")
 
         self.assertTrue(left)
         self.assertEqual(len(left), 8)
         self.assertEqual(left, right)
         self.assertNotEqual(left, other)
 
-    def test_local_chat_provider_calls_ollama_endpoint(self) -> None:
-        provider = LocalChatProvider(base_url="http://127.0.0.1:11434", model="qwen2.5:7b", temperature=0.1)
+    def test_local_chat_provider_calls_ollama_endpoint_with_cpu_limits(self) -> None:
+        cache_dir = Path('.cache_test_runtime') / 'cpu_limits'
+        provider = LocalChatProvider(
+            base_url="http://127.0.0.1:11434",
+            model="qwen2.5:7b",
+            temperature=0.1,
+            num_predict=64,
+            num_ctx=1024,
+            num_thread=4,
+            keep_alive="5m",
+            cache_dir=str(cache_dir),
+        )
 
-        with patch("app.llm.local_chat_provider.request.urlopen", return_value=_FakeHttpResponse({"response": "??????"})) as mocked:
-            result = provider.chat("??????? ?????")
+        with patch("app.llm.local_chat_provider.request.urlopen", return_value=_FakeHttpResponse({"response": "ответ"})) as mocked:
+            result = provider.chat("тестовый запрос")
 
-        self.assertEqual(result, "??????")
+        self.assertEqual(result, "ответ")
         request_obj = mocked.call_args.args[0]
         self.assertEqual(request_obj.full_url, "http://127.0.0.1:11434/api/generate")
         self.assertEqual(request_obj.get_method(), "POST")
         body = json.loads(request_obj.data.decode("utf-8"))
         self.assertEqual(body["model"], "qwen2.5:7b")
-        self.assertEqual(body["prompt"], "??????? ?????")
+        self.assertEqual(body["prompt"], "тестовый запрос")
         self.assertFalse(body["stream"])
+        self.assertEqual(body["keep_alive"], "5m")
+        self.assertEqual(body["options"]["num_predict"], 64)
+        self.assertEqual(body["options"]["num_ctx"], 1024)
+        self.assertEqual(body["options"]["num_thread"], 4)
+
+    def test_local_chat_provider_uses_cache_for_same_prompt(self) -> None:
+        cache_dir = Path('.cache_test_runtime') / 'same_prompt'
+        provider = LocalChatProvider(
+            base_url="http://127.0.0.1:11434",
+            model="qwen2.5:3b",
+            cache_dir=str(cache_dir),
+        )
+
+        with patch("app.llm.local_chat_provider.request.urlopen", return_value=_FakeHttpResponse({"response": "cached"})) as mocked:
+            first = provider.chat("одинаковый prompt")
+            second = provider.chat("одинаковый prompt")
+
+        self.assertEqual(first, "cached")
+        self.assertEqual(second, "cached")
+        self.assertEqual(mocked.call_count, 1)
 
     def test_dependencies_can_select_local_mode_via_legacy_model_mode(self) -> None:
         old_mode = os.environ.get("MODEL_MODE")

@@ -1,9 +1,10 @@
-import json
+﻿import json
 import re
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
 from app.llm.base import LLMProvider
+from app.llm.local_chat_provider import LocalChatProvider
 from app.schemas.document import DocumentInput, Paragraph, Position
 from app.schemas.issue import Issue, IssueLocation, StandardReference, SuggestedFix
 
@@ -12,44 +13,44 @@ STYLE_RULES = {
     "spelling_error": StandardReference(
         source="style_rules",
         rule_id="style_rule_00",
-        quote="\u041e\u0440\u0444\u043e\u0433\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043e\u0448\u0438\u0431\u043a\u0438 \u0438 \u044f\u0432\u043d\u044b\u0435 \u043e\u043f\u0435\u0447\u0430\u0442\u043a\u0438 \u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u044f\u0442\u044c.",
+        quote="Орфографические ошибки и явные опечатки следует исправлять.",
     ),
     "colloquial_phrase": StandardReference(
         source="style_rules",
         rule_id="style_rule_01",
-        quote="\u0421\u043b\u0435\u0434\u0443\u0435\u0442 \u0438\u0437\u0431\u0435\u0433\u0430\u0442\u044c \u044f\u0432\u043d\u043e \u0440\u0430\u0437\u0433\u043e\u0432\u043e\u0440\u043d\u044b\u0445 \u0438 \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u043d\u044b\u0445 \u0444\u043e\u0440\u043c\u0443\u043b\u0438\u0440\u043e\u0432\u043e\u043a.",
+        quote="Следует избегать явно разговорных и просторечных формулировок.",
     ),
     "informal_wording": StandardReference(
         source="style_rules",
         rule_id="style_rule_02",
-        quote="\u041d\u0435\u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u0430\u044f \u043b\u0435\u043a\u0441\u0438\u043a\u0430 \u0438 \u0433\u0440\u0443\u0431\u044b\u0435 \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u0438\u044f \u043d\u0435\u0434\u043e\u043f\u0443\u0441\u0442\u0438\u043c\u044b \u0432 \u043e\u0442\u0447\u0435\u0442\u0435.",
+        quote="Ненормативная лексика и грубые просторечия недопустимы в отчете.",
     ),
     "long_sentence": StandardReference(
         source="style_rules",
         rule_id="style_rule_03",
-        quote="\u0427\u0440\u0435\u0437\u043c\u0435\u0440\u043d\u043e \u0434\u043b\u0438\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f \u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u0440\u0430\u0437\u0431\u0438\u0432\u0430\u0442\u044c \u043d\u0430 \u0431\u043e\u043b\u0435\u0435 \u043a\u043e\u0440\u043e\u0442\u043a\u0438\u0435.",
+        quote="Чрезмерно длинные предложения следует разбивать на более короткие.",
     ),
 }
 
 HARD_COLLOQUIAL_REPLACEMENTS: Dict[str, str] = {
-    "\u043a\u043e\u0440\u043e\u0447\u0435 \u0433\u043e\u0432\u043e\u0440\u044f": "\u0442\u0430\u043a\u0438\u043c \u043e\u0431\u0440\u0430\u0437\u043e\u043c",
-    "\u043d\u0443 \u043a\u043e\u0440\u043e\u0447\u0435": "\u0442\u0430\u043a\u0438\u043c \u043e\u0431\u0440\u0430\u0437\u043e\u043c",
-    "\u0431\u043b\u0438\u043d": "",
-    "\u043e\u0444\u0438\u0433\u0435\u043d\u043d\u043e": "\u0437\u043d\u0430\u0447\u0438\u0442\u0435\u043b\u044c\u043d\u043e",
-    "\u043a\u0430\u043f\u0435\u0446": "\u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0435\u043d\u043d\u043e",
+    "короче говоря": "таким образом",
+    "ну короче": "таким образом",
+    "блин": "",
+    "офигенно": "значительно",
+    "капец": "существенно",
 }
 
 HARD_INFORMAL_REPLACEMENTS: Dict[str, str] = {
-    "\u0445\u0440\u0435\u043d\u044c": "\u044d\u043b\u0435\u043c\u0435\u043d\u0442",
-    "\u0444\u0438\u0433\u043d\u044f": "\u043e\u0448\u0438\u0431\u043a\u0430",
-    "\u0434\u0435\u0431\u0438\u043b\u044c\u043d\u044b\u0439": "\u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439",
-    "\u0442\u0443\u043f\u043e\u0439": "\u043d\u0435\u0443\u0434\u0430\u0447\u043d\u044b\u0439",
-    "\u0436\u0435\u0441\u0442\u044c": "\u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0435\u043d\u043d\u0430\u044f \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430",
+    "хрень": "элемент",
+    "фигня": "ошибка",
+    "дебильный": "некорректный",
+    "тупой": "неудачный",
+    "жесть": "существенная проблема",
 }
 
 ALLOWED_SUBTYPES = set(STYLE_RULES)
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-WORD_RE = re.compile(r"[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9-]+")
+WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9-]+")
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", re.DOTALL)
 
 
@@ -76,7 +77,7 @@ def _try_run_style_checks_with_llm(document: DocumentInput, llm_provider: Option
     if llm_provider is None:
         return None
 
-    prompt = _build_style_prompt(document)
+    prompt = _build_style_prompt(document, local_mode=isinstance(llm_provider, LocalChatProvider))
     try:
         response = llm_provider.chat(prompt)
     except Exception:
@@ -99,16 +100,9 @@ def _try_run_style_checks_with_llm(document: DocumentInput, llm_provider: Option
     return issues
 
 
-def _build_style_prompt(document: DocumentInput) -> str:
+def _build_style_prompt(document: DocumentInput, local_mode: bool = False) -> str:
     paragraphs = _iter_text_units(document)
-    serialized = []
-    for paragraph in paragraphs[:40]:
-        serialized.append({
-            "paragraph_id": paragraph.id,
-            "section_id": paragraph.section_id,
-            "page": paragraph.position.page,
-            "text": paragraph.text,
-        })
+    serialized = _serialize_paragraphs_for_prompt(paragraphs, local_mode=local_mode)
 
     schema = {
         "issues": [
@@ -125,21 +119,63 @@ def _build_style_prompt(document: DocumentInput) -> str:
         ]
     }
 
+    limit_note = "Верни не более 6 замечаний." if local_mode else "Верни только JSON без пояснений."
     return (
-        "\u0422\u044b \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u0448\u044c \u0442\u0435\u043a\u0441\u0442 \u043e\u0442\u0447\u0435\u0442\u0430 \u0432 \u043e\u0447\u0435\u043d\u044c \u043a\u043e\u043d\u0441\u0435\u0440\u0432\u0430\u0442\u0438\u0432\u043d\u043e\u043c \u0440\u0435\u0436\u0438\u043c\u0435. "
-        "\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u043e \u043d\u0430\u0445\u043e\u0434\u0438\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0442\u0440\u0438 \u043a\u043b\u0430\u0441\u0441\u0430 \u043f\u0440\u043e\u0431\u043b\u0435\u043c: "
-        "1) \u044f\u0432\u043d\u044b\u0435 \u043e\u0440\u0444\u043e\u0433\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043e\u0448\u0438\u0431\u043a\u0438 \u0438 \u043e\u043f\u0435\u0447\u0430\u0442\u043a\u0438, "
-        "2) \u0433\u0440\u0443\u0431\u044b\u0435 \u0440\u0430\u0437\u0433\u043e\u0432\u043e\u0440\u043d\u044b\u0435, \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u043d\u044b\u0435 \u0438\u043b\u0438 \u043d\u0435\u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u044b\u0435 \u0441\u043b\u043e\u0432\u0430, "
-        "3) \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043b\u044c\u043d\u043e \u0447\u0440\u0435\u0437\u043c\u0435\u0440\u043d\u043e \u0434\u043b\u0438\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0442\u044f\u043d\u0443\u0442\u0441\u044f \u043f\u043e\u0447\u0442\u0438 \u043d\u0430 \u043f\u043e\u043b\u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b. "
-        "\u041d\u0435 \u043f\u0435\u0440\u0435\u043f\u0438\u0441\u044b\u0432\u0430\u0439 \u043d\u0435\u0439\u0442\u0440\u0430\u043b\u044c\u043d\u0443\u044e \u043b\u0435\u043a\u0441\u0438\u043a\u0443 \u043d\u0430 \u0431\u043e\u043b\u0435\u0435 \u043d\u0430\u0443\u0447\u043d\u0443\u044e. "
-        "\u041d\u0435 \u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u0439 \u0441\u0442\u0438\u043b\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u0443\u043b\u0443\u0447\u0448\u0435\u043d\u0438\u044f \u0440\u0430\u0434\u0438 \u0443\u043b\u0443\u0447\u0448\u0435\u043d\u0438\u044f. "
-        "\u041d\u0435 \u0442\u0440\u043e\u0433\u0430\u0439 \u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u0442\u0435\u0440\u043c\u0438\u043d\u044b, \u0435\u0441\u043b\u0438 \u043e\u043d\u0438 \u0443\u0436\u0435 \u043d\u0435\u0439\u0442\u0440\u0430\u043b\u044c\u043d\u044b. "
-        "\u041d\u0435 \u043f\u043e\u043c\u0435\u0447\u0430\u0439 \u043e\u0431\u044b\u0447\u043d\u044b\u0435 \u0434\u043b\u0438\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u0435\u0441\u043b\u0438 \u043e\u043d\u0438 \u0435\u0449\u0435 \u0447\u0438\u0442\u0430\u0435\u043c\u044b. "
-        "\u0414\u043b\u044f \u0441\u043e\u043c\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0445 \u0441\u043b\u0443\u0447\u0430\u0435\u0432 \u0441\u0442\u0430\u0432\u044c confidence=low. "
-        "\u0412\u0435\u0440\u043d\u0438 \u0442\u043e\u043b\u044c\u043a\u043e JSON \u0431\u0435\u0437 \u043f\u043e\u044f\u0441\u043d\u0435\u043d\u0438\u0439.\n\n"
-        f"\u0424\u043e\u0440\u043c\u0430\u0442 \u043e\u0442\u0432\u0435\u0442\u0430: {json.dumps(schema, ensure_ascii=False)}\n\n"
-        f"\u041f\u0430\u0440\u0430\u0433\u0440\u0430\u0444\u044b \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430: {json.dumps(serialized, ensure_ascii=False)}"
+        "Ты проверяешь текст отчета в очень консервативном режиме. "
+        "Разрешено находить только два класса проблем: "
+        "1) явные орфографические ошибки и опечатки, "
+        "2) действительно чрезмерно длинные предложения, которые тянутся почти на полстраницы. "
+        "Не переписывай нейтральную лексику на более научную. "
+        "Не предлагай стилистические улучшения ради улучшения. "
+        "Не трогай технические термины, если они уже нейтральны. "
+        "Не помечай обычные длинные предложения, если они еще читаемы. "
+        "Для сомнительных случаев ставь confidence=low. "
+        f"{limit_note}\n\n"
+        f"Формат ответа: {json.dumps(schema, ensure_ascii=False)}\n\n"
+        f"Параграфы документа: {json.dumps(serialized, ensure_ascii=False)}"
     )
+
+
+def _serialize_paragraphs_for_prompt(paragraphs: List[Paragraph], *, local_mode: bool) -> List[dict]:
+    max_paragraphs = 12 if local_mode else 40
+    max_chars = 450 if local_mode else 1200
+    selected = _select_paragraphs_for_prompt(paragraphs, max_paragraphs=max_paragraphs, local_mode=local_mode)
+
+    serialized = []
+    for paragraph in selected:
+        text = paragraph.text.strip()
+        if len(text) > max_chars:
+            text = text[: max_chars - 1].rstrip() + "…"
+        serialized.append({
+            "paragraph_id": paragraph.id,
+            "text": text,
+        })
+    return serialized
+
+
+def _select_paragraphs_for_prompt(paragraphs: List[Paragraph], *, max_paragraphs: int, local_mode: bool) -> List[Paragraph]:
+    if len(paragraphs) <= max_paragraphs:
+        return paragraphs
+    if not local_mode:
+        return paragraphs[:max_paragraphs]
+
+    indexed = list(enumerate(paragraphs))
+    selected_indexes = {index for index, _ in indexed[:3]}
+    selected_indexes.update(index for index, _ in indexed[-2:])
+
+    for index, _ in sorted(indexed, key=lambda item: len(item[1].text or ""), reverse=True):
+        if len(selected_indexes) >= max_paragraphs:
+            break
+        selected_indexes.add(index)
+
+    if len(selected_indexes) < max_paragraphs:
+        step = max(1, len(paragraphs) // max_paragraphs)
+        for index in range(0, len(paragraphs), step):
+            selected_indexes.add(index)
+            if len(selected_indexes) >= max_paragraphs:
+                break
+
+    return [paragraph for index, paragraph in indexed if index in selected_indexes][:max_paragraphs]
 
 
 def _extract_json_payload(response: str) -> Optional[dict]:
@@ -196,8 +232,8 @@ def _issue_from_llm_payload(index: int, raw_issue: object, paragraph_map: Dict[s
     elif after:
         suggestion = after
 
-    message = _normalize_optional_text(raw_issue.get("message")) or "\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u043e \u0441\u0442\u0438\u043b\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0435 \u0437\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u0435"
-    evidence = _normalize_optional_text(raw_issue.get("evidence")) or "LLM \u043e\u0431\u043d\u0430\u0440\u0443\u0436\u0438\u043b\u0430 \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0443 \u0432 \u0442\u0435\u043a\u0441\u0442\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430."
+    message = _normalize_optional_text(raw_issue.get("message")) or "Обнаружено стилистическое замечание"
+    evidence = _normalize_optional_text(raw_issue.get("evidence")) or "LLM обнаружила проблему в тексте документа."
 
     return Issue(
         id=f"issue_style_llm_{index:03d}",
@@ -233,9 +269,9 @@ def _run_style_checks_fallback(document: DocumentInput, *, include_length_checks
                 issue_id=issue_id,
                 subtype="colloquial_phrase",
                 severity="warning",
-                message="\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u0430 \u0433\u0440\u0443\u0431\u043e \u0440\u0430\u0437\u0433\u043e\u0432\u043e\u0440\u043d\u0430\u044f \u0444\u043e\u0440\u043c\u0443\u043b\u0438\u0440\u043e\u0432\u043a\u0430",
+                message="Обнаружена грубо разговорная формулировка",
                 location=_location_from_paragraph(paragraph),
-                evidence=f"\u0424\u0440\u0430\u0433\u043c\u0435\u043d\u0442: '{_extract_fragment(paragraph.text, phrase)}'",
+                evidence=f"Фрагмент: '{_extract_fragment(paragraph.text, phrase)}'",
                 suggestion=SuggestedFix(before=before, after=after),
             ))
             issue_id += 1
@@ -248,13 +284,15 @@ def _run_style_checks_fallback(document: DocumentInput, *, include_length_checks
                 issue_id=issue_id,
                 subtype="informal_wording",
                 severity="warning",
-                message="\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u043e \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u043d\u043e\u0435 \u0438\u043b\u0438 \u043d\u0435\u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u043e\u0435 \u0441\u043b\u043e\u0432\u043e",
+                message="Обнаружено просторечное или ненормативное слово",
                 location=_location_from_paragraph(paragraph),
-                evidence=f"\u0421\u043b\u043e\u0432\u043e \u0438\u043b\u0438 \u043e\u0431\u043e\u0440\u043e\u0442: '{_extract_fragment(paragraph.text, word)}'",
+                evidence=f"Слово или оборот: '{_extract_fragment(paragraph.text, word)}'",
                 suggestion=SuggestedFix(before=before, after=after),
             ))
             issue_id += 1
 
+        if not include_length_checks:
+            continue
         for sentence in _split_sentences(paragraph.text):
             word_count = len(WORD_RE.findall(sentence))
             if word_count >= 55 or len(sentence) >= 420:
@@ -262,10 +300,10 @@ def _run_style_checks_fallback(document: DocumentInput, *, include_length_checks
                     issue_id=issue_id,
                     subtype="long_sentence",
                     severity="info",
-                    message="\u041f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0434\u043b\u0438\u043d\u043d\u043e\u0435 \u0438 \u0435\u0433\u043e \u0441\u0442\u043e\u0438\u0442 \u0440\u0430\u0437\u0431\u0438\u0442\u044c",
+                    message="Предложение слишком длинное и его стоит разбить",
                     location=_location_from_paragraph(paragraph),
-                    evidence=f"\u041f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 {word_count} \u0441\u043b\u043e\u0432.",
-                    suggestion="\u0420\u0430\u0437\u0431\u0435\u0439\u0442\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u043d\u0430 2-3 \u0431\u043e\u043b\u0435\u0435 \u043a\u043e\u0440\u043e\u0442\u043a\u0438\u0435 \u0447\u0430\u0441\u0442\u0438 \u0438 \u043e\u0441\u0442\u0430\u0432\u044c\u0442\u0435 \u0432 \u043a\u0430\u0436\u0434\u043e\u0439 \u043e\u0434\u043d\u043e \u043a\u043b\u044e\u0447\u0435\u0432\u043e\u0435 \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u0435.",
+                    evidence=f"Предложение содержит {word_count} слов.",
+                    suggestion="Разбейте предложение на 2-3 более короткие части и оставьте в каждой одно ключевое утверждение.",
                 ))
                 issue_id += 1
 
@@ -288,7 +326,7 @@ def _iter_text_units(document: DocumentInput) -> List[Paragraph]:
 
 
 def _normalize(text: str) -> str:
-    return " ".join(text.lower().replace("\u0451", "\u0435").split())
+    return " ".join(text.lower().replace("ё", "е").split())
 
 
 def _split_sentences(text: str) -> List[str]:

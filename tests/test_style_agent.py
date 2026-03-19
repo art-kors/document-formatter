@@ -1,6 +1,6 @@
-import unittest
+﻿import unittest
 
-from app.agents.style_agent.checks import build_style_summary, run_style_checks
+from app.agents.style_agent.checks import _build_style_prompt, build_style_summary, run_style_checks
 from app.agents.style_agent.service import StyleAgentService
 from app.orchestration.pipeline import DocumentPipeline
 from app.schemas.document import DocumentInput, DocumentMeta, Paragraph, Position, Section
@@ -63,10 +63,10 @@ class SoftStyleProvider(FakeProvider):
       "subtype": "informal_wording",
       "severity": "warning",
       "confidence": "high",
-      "message": "Слово не звучит научно",
-      "evidence": "Модели не нравится нейтральное слово.",
-      "before": "справочные данные",
-      "after": "нормативная информация"
+      "message": "РЎР»РѕРІРѕ РЅРµ Р·РІСѓС‡РёС‚ РЅР°СѓС‡РЅРѕ",
+      "evidence": "РњРѕРґРµР»Рё РЅРµ РЅСЂР°РІРёС‚СЃСЏ РЅРµР№С‚СЂР°Р»СЊРЅРѕРµ СЃР»РѕРІРѕ.",
+      "before": "СЃРїСЂР°РІРѕС‡РЅС‹Рµ РґР°РЅРЅС‹Рµ",
+      "after": "РЅРѕСЂРјР°С‚РёРІРЅР°СЏ РёРЅС„РѕСЂРјР°С†РёСЏ"
     }
   ]
 }"""
@@ -127,12 +127,12 @@ class StyleAgentTests(unittest.TestCase):
             document_id="doc_style_soft_llm",
             standard_id="gost_7_32_2017",
             meta=DocumentMeta(filename="report.docx", title="Report"),
-            sections=[Section(id="sec_1", number="1", title="Основная часть", level=1)],
+            sections=[Section(id="sec_1", number="1", title="РћСЃРЅРѕРІРЅР°СЏ С‡Р°СЃС‚СЊ", level=1)],
             paragraphs=[
                 Paragraph(
                     id="p_1",
                     section_id="sec_1",
-                    text="Система использует справочные данные и расчетные параметры.",
+                    text="РЎРёСЃС‚РµРјР° РёСЃРїРѕР»СЊР·СѓРµС‚ СЃРїСЂР°РІРѕС‡РЅС‹Рµ РґР°РЅРЅС‹Рµ Рё СЂР°СЃС‡РµС‚РЅС‹Рµ РїР°СЂР°РјРµС‚СЂС‹.",
                     position=Position(page=1, paragraph_index=1),
                 )
             ],
@@ -207,6 +207,31 @@ class StyleAgentTests(unittest.TestCase):
 
         self.assertIn("long_sentence", subtypes)
 
+
+    def test_local_style_prompt_is_shorter_for_cpu_mode(self) -> None:
+        paragraphs = [
+            Paragraph(
+                id=f"p_{index}",
+                section_id="sec_1",
+                text=("Очень длинный абзац для проверки локального prompt " * 20) + str(index),
+                position=Position(page=1, paragraph_index=index),
+            )
+            for index in range(1, 21)
+        ]
+        document = DocumentInput(
+            document_id="doc_style_local_prompt",
+            standard_id="gost_7_32_2017",
+            meta=DocumentMeta(filename="report.docx", title="Report"),
+            sections=[Section(id="sec_1", number="1", title="Введение", level=1)],
+            paragraphs=paragraphs,
+        )
+
+        remote_prompt = _build_style_prompt(document, local_mode=False)
+        local_prompt = _build_style_prompt(document, local_mode=True)
+
+        self.assertLess(len(local_prompt), len(remote_prompt))
+        self.assertLessEqual(local_prompt.count('"paragraph_id"'), 13)
+        self.assertIn('Верни не более 6 замечаний.', local_prompt)
     def test_style_service_returns_summary_details(self) -> None:
         document = DocumentInput(
             document_id="doc_style_summary",
@@ -245,3 +270,5 @@ class StyleAgentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
