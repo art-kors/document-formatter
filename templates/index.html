@@ -256,6 +256,26 @@
             flex-wrap: wrap;
         }
 
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .switch-card {
+            padding: 14px;
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.72);
+            display: grid;
+            gap: 8px;
+        }
+
+        .switch-card small {
+            color: var(--muted);
+            line-height: 1.4;
+        }
+
         button {
             font: inherit;
         }
@@ -413,6 +433,33 @@
             background: rgba(31, 26, 23, 0.04);
         }
 
+        .issue-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .btn-ghost {
+            appearance: none;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.84);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        .badge.fixable {
+            background: rgba(45, 107, 89, 0.12);
+            color: var(--style);
+        }
+
+        .badge.manual {
+            background: rgba(31, 26, 23, 0.08);
+            color: var(--muted);
+        }
+
         .issue-meta-label {
             display: block;
             margin-bottom: 8px;
@@ -461,7 +508,7 @@
             <div class="metrics">
                 <div class="metric">
                     <span class="metric-label">Режим</span>
-                    <span class="metric-value" id="hero-mode">local</span>
+                    <span class="metric-value" id="hero-mode">chat {{ chat_mode_default }} / embed {{ embed_mode_default }}</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Стандартов</span>
@@ -500,12 +547,31 @@
                             <option value="{{ item.standard_id }}" {% if loop.first %}selected{% endif %}>{{ item.title }}</option>
                         {% endfor %}
                     {% else %}
-                        <option value="">????????? ??????????</option>
+                        <option value="">Стандарты недоступны</option>
                     {% endif %}
                 </select>
 
                 <label for="document-id">Идентификатор документа</label>
                 <input id="document-id" type="text" placeholder="Например, report_001">
+
+                <div class="mode-grid">
+                    <div class="switch-card">
+                        <label for="chat-mode-select">Чат-модель</label>
+                        <select id="chat-mode-select">
+                            <option value="api" {% if chat_mode_default == 'api' %}selected{% endif %}>API</option>
+                            <option value="local" {% if chat_mode_default == 'local' %}selected{% endif %}>Local</option>
+                        </select>
+                        <small>Используется для стилистического анализа и chat-задач.</small>
+                    </div>
+                    <div class="switch-card">
+                        <label for="embed-mode-select">Embedding-модель</label>
+                        <select id="embed-mode-select">
+                            <option value="api" {% if embed_mode_default == 'api' %}selected{% endif %}>API</option>
+                            <option value="local" {% if embed_mode_default == 'local' %}selected{% endif %}>Local</option>
+                        </select>
+                        <small>Используется для retrieval и graph-RAG.</small>
+                    </div>
+                </div>
 
                 <div class="actions">
                     <button class="btn-primary" id="run-button" type="button">Запустить проверку</button>
@@ -518,11 +584,11 @@
 
     <section class="panel results" id="results-panel">
         <div>
-            <h2 class="panel-title">???????? ?????</h2>
-            <p class="panel-subtitle" id="report-caption">????? ??????? ????? ???????? summary, ??????? ? ???????? ?????????.</p>
+            <h2 class="panel-title">Отчет по замечаниям</h2>
+            <p class="panel-subtitle" id="report-caption">Итоговый отчет, фильтры и работа с активными замечаниями.</p>
         </div>
         <div class="filter-row">
-            <button class="btn-primary" id="download-fixed-button" type="button" disabled>????????? ??? ???????????</button>
+            <button class="btn-primary" id="download-fixed-button" type="button" disabled>Применить автоисправления</button>
         </div>
 
         <div class="summary-grid" id="summary-grid"></div>
@@ -543,7 +609,11 @@
         standards: {{ standards|tojson }},
         report: null,
         activeType: 'all',
-        onlyFixable: false,
+        fixabilityView: 'all',
+        dismissedIssueIds: new Set(),
+        showDismissed: false,
+        chatMode: '{{ chat_mode_default }}',
+        embedMode: '{{ embed_mode_default }}',
     };
 
     const elements = {
@@ -551,6 +621,8 @@
         documentName: document.getElementById('document-name'),
         standardSelect: document.getElementById('standard-select'),
         documentId: document.getElementById('document-id'),
+        chatModeSelect: document.getElementById('chat-mode-select'),
+        embedModeSelect: document.getElementById('embed-mode-select'),
         runButton: document.getElementById('run-button'),
         downloadFixedButton: document.getElementById('download-fixed-button'),
         statusStrip: document.getElementById('status-strip'),
@@ -576,15 +648,22 @@
 
     elements.documentInput.addEventListener('change', onDocumentSelected);
     elements.runButton.addEventListener('click', analyzeFile);
-    if (elements.downloadFixedButton) {
-        elements.downloadFixedButton.addEventListener('click', downloadFixedDocument);
-    }
+    elements.downloadFixedButton?.addEventListener('click', downloadFixedDocument);
+    elements.chatModeSelect?.addEventListener('change', syncModeState);
+    elements.embedModeSelect?.addEventListener('change', syncModeState);
 
     bootstrap();
 
     async function bootstrap() {
+        syncModeState();
         await loadStandards();
         setStatus('Готово к запуску проверки.', 'idle');
+    }
+
+    function syncModeState() {
+        state.chatMode = elements.chatModeSelect?.value || 'default';
+        state.embedMode = elements.embedModeSelect?.value || 'default';
+        elements.heroMode.textContent = `chat ${state.chatMode} / embed ${state.embedMode}`;
     }
 
     async function loadStandards() {
@@ -617,58 +696,12 @@
         state.documentFile = event.target.files[0] || null;
         elements.documentName.textContent = state.documentFile ? state.documentFile.name : 'Файл не выбран';
         if (state.documentFile && !elements.documentId.value.trim()) {
-            elements.documentId.value = state.documentFile.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9а-яА-ЯёЁ]+/g, '_').replace(/^_+|_+$/g, '');
-        }
-    }
-
-    async function downloadFixedDocument() {
-        if (!state.report || !state.report.parsed_document || !state.documentFile) {
-            setStatus('??????? ????????? ?????? ?????????.', 'error');
-            return;
-        }
-
-        const outputName = (state.report.document_id || 'corrected_document') + '_fixed.docx';
-        if (elements.downloadFixedButton) {
-            elements.downloadFixedButton.disabled = true;
-        }
-        setStatus('??????????? ??????????? ? ????????? DOCX.', 'loading');
-
-        const formData = new FormData();
-        formData.append('document', state.documentFile);
-        formData.append('parsed_document_json', JSON.stringify(state.report.parsed_document));
-        formData.append('issues_json', JSON.stringify(state.report.issues || []));
-        formData.append('output_filename', outputName);
-
-        try {
-            const response = await fetch('/apply-fixes-file', {
-                method: 'POST',
-                body: formData,
-            });
-            if (!response.ok) {
-                const payload = await readApiResponse(response);
-                throw new Error(payload.detail || payload.message || '?? ??????? ????????? ??????????? ? ????????? DOCX');
-            }
-
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = outputName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
-            setStatus('???????????? DOCX ??????????? ? ??????.', 'success');
-        } catch (error) {
-            setStatus(error.message, 'error');
-        } finally {
-            if (elements.downloadFixedButton) {
-                elements.downloadFixedButton.disabled = !state.report?.parsed_document;
-            }
+            elements.documentId.value = state.documentFile.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
         }
     }
 
     async function analyzeFile() {
+        syncModeState();
         if (!state.documentFile) {
             setStatus('Сначала выберите документ для проверки.', 'error');
             return;
@@ -680,7 +713,7 @@
 
         elements.runButton.disabled = true;
         elements.runButton.textContent = 'Проверка...';
-        setStatus('Файл загружен. Бэкенд парсит документ и запускает агентов.', 'loading');
+        setStatus('Бэкенд парсит документ и запускает агентов.', 'loading');
         elements.heroStatus.textContent = 'в работе';
 
         const formData = new FormData();
@@ -690,26 +723,28 @@
             formData.append('document_id', elements.documentId.value.trim());
         }
         formData.append('include_parsed_document', 'true');
+        formData.append('chat_mode', state.chatMode);
+        formData.append('embed_mode', state.embedMode);
 
         try {
-            const response = await fetch('/analyze-file', {
-                method: 'POST',
-                body: formData,
-            });
+            const response = await fetch('/analyze-file', { method: 'POST', body: formData });
             const payload = await readApiResponse(response);
             if (!response.ok) {
-                throw new Error(payload.detail || payload.message || '?? ??????? ????????? ????????');
+                throw new Error(payload.detail || payload.message || 'Не удалось запустить анализ');
             }
 
             state.report = payload;
             state.activeType = 'all';
-            state.onlyFixable = false;
-            if (elements.downloadFixedButton) {
-                elements.downloadFixedButton.disabled = !payload.parsed_document;
-            }
+            state.fixabilityView = 'all';
+            state.dismissedIssueIds = new Set();
+            state.showDismissed = false;
+            elements.downloadFixedButton.disabled = !payload.parsed_document;
             renderReport();
-            setStatus(`Проверка завершена: ${payload.summary.total_issues} замечаний.`, 'success');
+            setStatus(`Проверка завершена: ${getActiveIssues().length} активных замечаний.`, 'success');
             elements.heroStatus.textContent = payload.status;
+            if (payload.runtime_modes) {
+                elements.heroMode.textContent = `chat ${payload.runtime_modes.chat_mode} / embed ${payload.runtime_modes.embed_mode}`;
+            }
         } catch (error) {
             setStatus(error.message, 'error');
             elements.heroStatus.textContent = 'ошибка';
@@ -719,20 +754,89 @@
         }
     }
 
+    async function downloadFixedDocument() {
+        if (!state.report || !state.report.parsed_document || !state.documentFile) {
+            setStatus('Сначала нужно получить отчет анализа.', 'error');
+            return;
+        }
+
+        const issuesForFix = getActiveIssues().filter((issue) => isIssueFixable(issue));
+        if (!issuesForFix.length) {
+            setStatus('Нет активных автоисправляемых замечаний.', 'error');
+            return;
+        }
+
+        const outputName = (state.report.document_id || 'corrected_document') + '_fixed.docx';
+        elements.downloadFixedButton.disabled = true;
+        setStatus('Применяются только активные автоисправимые замечания.', 'loading');
+
+        const formData = new FormData();
+        formData.append('document', state.documentFile);
+        formData.append('parsed_document_json', JSON.stringify(state.report.parsed_document));
+        formData.append('issues_json', JSON.stringify(issuesForFix));
+        formData.append('output_filename', outputName);
+
+        try {
+            const response = await fetch('/apply-fixes-file', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const payload = await readApiResponse(response);
+                throw new Error(payload.detail || payload.message || 'Не удалось собрать исправленный DOCX');
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = outputName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            setStatus('Исправленный DOCX скачан.', 'success');
+        } catch (error) {
+            setStatus(error.message, 'error');
+        } finally {
+            elements.downloadFixedButton.disabled = !state.report?.parsed_document;
+        }
+    }
+
     function renderReport() {
         if (!state.report) return;
         elements.resultsPanel.classList.add('visible');
-        renderSummary(state.report.summary, state.report);
-        renderFilters(state.report.summary);
+        renderSummary();
+        renderFilters();
         renderIssues();
     }
 
-    function renderSummary(summary, report) {
+    function getActiveIssues() {
+        if (!state.report) return [];
+        return (state.report.issues || []).filter((issue) => !state.dismissedIssueIds.has(issue.id));
+    }
+
+    function getDismissedIssues() {
+        if (!state.report) return [];
+        return (state.report.issues || []).filter((issue) => state.dismissedIssueIds.has(issue.id));
+    }
+
+    function buildClientSummary() {
+        const issues = getActiveIssues();
+        const summary = { total_issues: issues.length, critical: 0, warning: 0, info: 0, by_type: {}, fixable: 0 };
+        for (const issue of issues) {
+            summary[issue.severity] = (summary[issue.severity] || 0) + 1;
+            summary.by_type[issue.type] = (summary.by_type[issue.type] || 0) + 1;
+            if (isIssueFixable(issue)) summary.fixable += 1;
+        }
+        return summary;
+    }
+
+    function renderSummary() {
+        const report = state.report;
+        const summary = buildClientSummary();
+        const dismissedCount = getDismissedIssues().length;
         const cards = [
-            { label: 'Всего замечаний', value: summary.total_issues, note: `Документ: ${report.document_id}` },
-            { label: 'Критические', value: summary.critical, note: `warning: ${summary.warning}, info: ${summary.info}` },
-            { label: 'Исправимые', value: summary.fixable, note: `агентов: ${report.agents_run.length}` },
-            { label: 'Время', value: `${report.processing_time_ms} ms`, note: report.agents_failed && Object.keys(report.agents_failed).length ? `partial: ${Object.keys(report.agents_failed).join(', ')}` : 'все агенты ответили' },
+            { label: 'Активные замечания', value: summary.total_issues, note: `Документ: ${report.document_id}` },
+            { label: 'Критичность', value: summary.critical, note: `warning: ${summary.warning}, info: ${summary.info}` },
+            { label: 'Автоисправимые', value: summary.fixable, note: `manual: ${summary.total_issues - summary.fixable}` },
+            { label: 'Отклонено', value: dismissedCount, note: `${report.processing_time_ms} ms` },
         ];
 
         elements.summaryGrid.innerHTML = cards.map((card) => `
@@ -745,13 +849,14 @@
 
         const parsed = report.parsed_document;
         if (parsed) {
-            elements.reportCaption.textContent = `Стандарт: ${report.standard_id}. Парсер документа выделил ${parsed.sections.length} секций, ${parsed.paragraphs.length} абзацев, ${parsed.figures.length} рисунков и ${parsed.tables.length} таблиц.`;
+            elements.reportCaption.textContent = `Стандарт: ${report.standard_id}. Режим: chat ${state.chatMode}, embed ${state.embedMode}. Активных замечаний: ${summary.total_issues}.`;
         } else {
-            elements.reportCaption.textContent = `Стандарт: ${report.standard_id}. Итоговый отчет сформирован оркестратором агентов.`;
+            elements.reportCaption.textContent = `Стандарт: ${report.standard_id}. Режим: chat ${state.chatMode}, embed ${state.embedMode}.`;
         }
     }
 
-    function renderFilters(summary) {
+    function renderFilters() {
+        const summary = buildClientSummary();
         const typeButtons = ['all', ...Object.keys(summary.by_type || {})];
         elements.typeFilters.innerHTML = typeButtons.map((type) => `
             <button type="button" class="filter-btn ${state.activeType === type ? 'active' : ''}" data-type="${escapeHtml(type)}">
@@ -762,39 +867,68 @@
         elements.typeFilters.querySelectorAll('[data-type]').forEach((button) => {
             button.addEventListener('click', () => {
                 state.activeType = button.dataset.type;
-                renderFilters(summary);
+                renderFilters();
                 renderIssues();
             });
         });
 
+        const fixabilityButtons = [
+            { key: 'all', label: 'Все' },
+            { key: 'fixable', label: 'Только автоисправимые' },
+            { key: 'manual', label: 'Только ручная проверка' },
+        ];
+
         elements.metaFilters.innerHTML = `
-            <button type="button" class="filter-btn ${state.onlyFixable ? 'active' : ''}" id="fixable-filter">
-                Только с исправлением
+            ${fixabilityButtons.map((item) => `
+                <button type="button" class="filter-btn ${state.fixabilityView === item.key ? 'active' : ''}" data-fixability="${item.key}">
+                    ${item.label}
+                </button>
+            `).join('')}
+            <button type="button" class="filter-btn ${state.showDismissed ? 'active' : ''}" id="toggle-dismissed">
+                ${state.showDismissed ? 'Скрыть отклоненные' : 'Показать отклоненные'}
             </button>
         `;
-        document.getElementById('fixable-filter').addEventListener('click', () => {
-            state.onlyFixable = !state.onlyFixable;
-            renderFilters(summary);
+
+        elements.metaFilters.querySelectorAll('[data-fixability]').forEach((button) => {
+            button.addEventListener('click', () => {
+                state.fixabilityView = button.dataset.fixability;
+                renderFilters();
+                renderIssues();
+            });
+        });
+        document.getElementById('toggle-dismissed')?.addEventListener('click', () => {
+            state.showDismissed = !state.showDismissed;
+            renderFilters();
             renderIssues();
         });
     }
 
-    function renderIssues() {
-        const issues = getFilteredIssues();
-        elements.issuesList.innerHTML = issues.map(renderIssueCard).join('');
-        elements.emptyState.hidden = issues.length !== 0;
+    function getRenderableIssues() {
+        const source = state.showDismissed ? getDismissedIssues() : getActiveIssues();
+        return source
+            .filter((issue) => {
+                if (state.activeType !== 'all' && issue.type !== state.activeType) return false;
+                if (state.fixabilityView === 'fixable' && !isIssueFixable(issue)) return false;
+                if (state.fixabilityView === 'manual' && isIssueFixable(issue)) return false;
+                return true;
+            })
+            .sort((left, right) => {
+                const fixDelta = Number(isIssueFixable(right)) - Number(isIssueFixable(left));
+                if (fixDelta !== 0) return fixDelta;
+                const severityOrder = { critical: 3, warning: 2, info: 1 };
+                return (severityOrder[right.severity] || 0) - (severityOrder[left.severity] || 0);
+            });
     }
 
-    function getFilteredIssues() {
-        if (!state.report) return [];
-        return state.report.issues.filter((issue) => {
-            if (state.activeType !== 'all' && issue.type !== state.activeType) {
-                return false;
-            }
-            if (state.onlyFixable && !issue.suggestion) {
-                return false;
-            }
-            return true;
+    function renderIssues() {
+        const issues = getRenderableIssues();
+        elements.issuesList.innerHTML = issues.map(renderIssueCard).join('');
+        elements.emptyState.hidden = issues.length !== 0;
+        elements.emptyState.textContent = state.showDismissed
+            ? 'Отклоненных замечаний по текущему фильтру нет.'
+            : 'Активных замечаний по текущему фильтру нет.';
+        elements.issuesList.querySelectorAll('[data-dismiss-id]').forEach((button) => {
+            button.addEventListener('click', () => toggleDismissIssue(button.dataset.dismissId));
         });
     }
 
@@ -802,6 +936,9 @@
         const suggestion = formatSuggestion(issue.suggestion);
         const location = formatLocation(issue.location || {});
         const quote = issue.standard_reference?.quote || 'Нет ссылки на конкретную цитату.';
+        const actionLabel = state.showDismissed ? 'Вернуть' : 'Отклонить';
+        const fixabilityLabel = isIssueFixable(issue) ? 'Автоисправимо' : 'Ручная проверка';
+        const fixabilityClass = isIssueFixable(issue) ? 'fixable' : 'manual';
         return `
             <article class="issue-card" data-severity="${escapeHtml(issue.severity || 'info')}">
                 <div class="issue-top">
@@ -810,10 +947,14 @@
                         <div class="issue-badges">
                             <span class="badge severity-${escapeHtml(issue.severity || 'info')}">${escapeHtml(issue.severity || 'info')}</span>
                             <span class="badge type-${escapeHtml(issue.type || 'formatting')}">${escapeHtml(TYPE_LABELS[issue.type] || issue.type || 'issue')}</span>
+                            <span class="badge ${fixabilityClass}">${fixabilityLabel}</span>
                             <span class="badge">${escapeHtml(issue.agent || 'agent')}</span>
                         </div>
                     </div>
-                    <div class="file-chip">${escapeHtml(issue.subtype || issue.id || 'issue')}</div>
+                    <div class="issue-actions">
+                        <div class="file-chip">${escapeHtml(issue.subtype || issue.id || 'issue')}</div>
+                        <button type="button" class="btn-ghost" data-dismiss-id="${escapeHtml(issue.id)}">${actionLabel}</button>
+                    </div>
                 </div>
 
                 <div class="issue-grid">
@@ -833,10 +974,25 @@
 
                 <div class="issue-meta">
                     <span class="issue-meta-label">Норма стандарта</span>
-                    <div class="issue-meta-value"><strong>${escapeHtml(issue.standard_reference?.rule_id || '—')}</strong> · ${escapeHtml(quote)}</div>
+                    <div class="issue-meta-value"><strong>${escapeHtml(issue.standard_reference?.rule_id || '?')}</strong> ? ${escapeHtml(quote)}</div>
                 </div>
             </article>
         `;
+    }
+
+    function toggleDismissIssue(issueId) {
+        if (state.dismissedIssueIds.has(issueId)) {
+            state.dismissedIssueIds.delete(issueId);
+        } else {
+            state.dismissedIssueIds.add(issueId);
+        }
+        renderSummary();
+        renderFilters();
+        renderIssues();
+    }
+
+    function isIssueFixable(issue) {
+        return Boolean(issue && issue.suggestion);
     }
 
     function formatLocation(location) {
@@ -844,14 +1000,14 @@
         if (location.page) parts.push(`стр. ${location.page}`);
         if (location.section_id) parts.push(`секция ${location.section_id}`);
         if (location.paragraph_id) parts.push(`абзац ${location.paragraph_id}`);
-        return parts.length ? parts.join(' · ') : 'Место не определено';
+        return parts.length ? parts.join(' ? ') : 'Место не определено';
     }
 
     function formatSuggestion(suggestion) {
         if (!suggestion) return 'Нет предложенного исправления';
         if (typeof suggestion === 'string') return escapeHtml(suggestion);
         if (suggestion.before !== undefined || suggestion.after !== undefined) {
-            return `<strong>Было:</strong> ${escapeHtml(suggestion.before || '—')}<br><strong>Стало:</strong> ${escapeHtml(suggestion.after || '—')}`;
+            return `<strong>Было:</strong> ${escapeHtml(suggestion.before || '?')}<br><strong>Стало:</strong> ${escapeHtml(suggestion.after || '?')}`;
         }
         return escapeHtml(JSON.stringify(suggestion));
     }
@@ -877,7 +1033,7 @@
         try {
             return JSON.parse(raw || '{}');
         } catch {
-            return { detail: raw || '?????? ?????? ?????? ?????' };
+            return { detail: raw || 'Ответ сервера не удалось разобрать' };
         }
     }
 

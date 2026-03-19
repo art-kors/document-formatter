@@ -7,12 +7,12 @@ from app.schemas.document import DocumentInput, DocumentMeta, FigureItem, Paragr
 
 
 SECTION_PATTERN = re.compile(r'^(?P<number>\d+(?:\.\d+)*)\s+(?P<title>[^\n]{1,200})$')
-APPENDIX_PATTERN = re.compile('^(?:\u041f\u0420\u0418\u041b\u041e\u0416\u0415\u041d\u0418\u0415|\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435)\\s+(?P<number>[A-Z\u0410-\u042f\u0401])(?:\\s*[\u2013-]?\\s*(?P<title>.*))?$')
+APPENDIX_PATTERN = re.compile('^(?:\u041f\u0420\u0418\u041b\u041e\u0416\u0415\u041d\u0418\u0415|\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435)\s+(?P<number>[A-Z\u0410-\u042f\u0401])(?:\s*[\u2013-]?\s*(?P<title>.*))?$')
 FIGURE_PATTERN = re.compile(
-    '^(?:\u0420\u0438\u0441\u0443\u043d\u043e\u043a|\u0420\u0438\u0441\\.?|\u0440\u0438\u0441\\.?)\\s*(?P<number>\\d+(?:\\.\\d+)*)\\s*[\u2014\u2013-]?\\s*(?P<title>.*)$',
+    '^(?:\u0420\u0438\u0441\u0443\u043d\u043e(?:\u043a)?|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$',
     re.IGNORECASE,
 )
-TABLE_PATTERN = re.compile('^\u0422\u0430\u0431\u043b\u0438\u0446\u0430\\s+(?P<number>\\d+)\\s*[\u2013-]?\\s*(?P<title>.*)$', re.IGNORECASE)
+TABLE_PATTERN = re.compile('^(?:\u0422\u0430\u0431\u043b\u0438\u0446(?:\u0430)?)\s+(?P<number>\d+(?:\.\d+)*)\s*[\u2013-]?\s*(?P<title>.*)$', re.IGNORECASE)
 _HEADING_STYLE_HINTS = ('heading', '\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043e\u043a')
 
 _CANONICAL_UNNUMBERED_HEADINGS = {
@@ -49,12 +49,6 @@ def parse_text_to_document(
                 current_section.text = current_section.text.strip()
             current_section = Section(**heading)
             sections.append(current_section)
-            section_heading_meta[current_section.id] = {
-                'paragraph_index': index,
-                'text': text,
-                'alignment': alignment,
-                'style_name': style_name,
-            }
             continue
 
         if current_section is not None:
@@ -92,7 +86,6 @@ def parse_text_to_document(
         tables=tables,
         figures=figures,
     )
-
 
 def parse_docx_to_document(
     file_bytes: bytes,
@@ -162,12 +155,16 @@ def parse_docx_to_document(
     if current_section is not None:
         current_section.text = current_section.text.strip()
 
+    docx_tables_meta = _extract_docx_tables_meta(doc, sections)
     title = next((section.title for section in sections if section.title), Path(filename).stem)
     extras = {
         'source_format': 'docx',
         'docx_paragraphs': paragraph_meta,
         'docx_table_paragraphs': _extract_table_paragraph_meta(doc),
+        'docx_tables_meta': docx_tables_meta,
+        'docx_formulas': _extract_docx_formula_meta(doc),
         'docx_sections': _extract_section_page_meta(doc),
+        'docx_page_numbering': _extract_page_numbering_meta(doc),
         'section_headings': section_heading_meta,
         'has_tables': bool(doc.tables),
         'inline_shapes_count': len(getattr(doc, 'inline_shapes', [])),
@@ -288,6 +285,78 @@ def _extract_section_page_meta(doc: Any) -> List[Dict[str, Any]]:
     return section_meta
 
 
+def _extract_page_numbering_meta(doc: Any) -> List[Dict[str, Any]]:
+    numbering_meta: List[Dict[str, Any]] = []
+    for index, section in enumerate(getattr(doc, 'sections', []), start=1):
+        default_footer = _footer_page_field_meta(getattr(section, 'footer', None))
+        first_footer = _footer_page_field_meta(getattr(section, 'first_page_footer', None))
+        even_footer = _footer_page_field_meta(getattr(section, 'even_page_footer', None))
+        default_header = _footer_page_field_meta(getattr(section, 'header', None))
+        first_header = _footer_page_field_meta(getattr(section, 'first_page_header', None))
+        even_header = _footer_page_field_meta(getattr(section, 'even_page_header', None))
+        numbering_meta.append(
+            {
+                'section_index': index,
+                'different_first_page': bool(getattr(section, 'different_first_page_header_footer', False)),
+                'default_footer_has_page_field': default_footer['has_page_field'],
+                'default_footer_alignment': default_footer['alignment'],
+                'first_footer_has_page_field': first_footer['has_page_field'],
+                'first_footer_alignment': first_footer['alignment'],
+                'even_footer_has_page_field': even_footer['has_page_field'],
+                'even_footer_alignment': even_footer['alignment'],
+                'default_header_has_page_field': default_header['has_page_field'],
+                'default_header_alignment': default_header['alignment'],
+                'first_header_has_page_field': first_header['has_page_field'],
+                'first_header_alignment': first_header['alignment'],
+                'even_header_has_page_field': even_header['has_page_field'],
+                'even_header_alignment': even_header['alignment'],
+                'page_number_start': _extract_page_number_start(section),
+            }
+        )
+    return numbering_meta
+
+
+def _footer_page_field_meta(footer: Any) -> Dict[str, Any]:
+    result = {'has_page_field': False, 'alignment': None}
+    if footer is None:
+        return result
+    for paragraph in getattr(footer, 'paragraphs', []) or []:
+        if _paragraph_has_page_field(paragraph):
+            result['has_page_field'] = True
+            result['alignment'] = _alignment_name(paragraph.alignment)
+            return result
+    return result
+
+
+def _paragraph_has_page_field(paragraph: Any) -> bool:
+    paragraph_xml = getattr(getattr(paragraph, '_p', None), 'xml', '') or ''
+    xml = str(paragraph_xml)
+    if not xml:
+        return False
+    upper_xml = xml.upper()
+    return 'PAGE' in upper_xml and ('INSTRTEXT' in upper_xml or 'FLDSIMPLE' in upper_xml)
+
+
+def _extract_page_number_start(section: Any) -> Optional[int]:
+    try:
+        from docx.oxml.ns import qn
+    except Exception:
+        return None
+    sect_pr = getattr(section, '_sectPr', None)
+    if sect_pr is None:
+        return None
+    pg_num_type = sect_pr.find(qn('w:pgNumType'))
+    if pg_num_type is None:
+        return None
+    raw_value = pg_num_type.get(qn('w:start'))
+    if raw_value in (None, ''):
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _emu_to_mm(length: Any) -> Optional[float]:
     if length is None:
         return None
@@ -296,6 +365,98 @@ def _emu_to_mm(length: Any) -> Optional[float]:
     except (TypeError, ValueError):
         return None
 
+
+def _extract_docx_tables_meta(doc: Any, sections: List[Section]) -> List[Dict[str, Any]]:
+    tables_meta: List[Dict[str, Any]] = []
+    blocks = list(_iter_docx_body_blocks(doc))
+
+    for position, block in enumerate(blocks):
+        if block['type'] != 'table':
+            continue
+        previous_paragraph = _nearest_table_caption_block(blocks, position, step=-1)
+        next_paragraph = _nearest_table_caption_block(blocks, position, step=1)
+        caption_block = previous_paragraph or next_paragraph
+        caption_position = 'above' if previous_paragraph else 'below' if next_paragraph else 'missing'
+        section_title = block.get('section_title') or ''
+        tables_meta.append({
+            'table_index': block['table_index'],
+            'caption_paragraph_index': caption_block.get('paragraph_index') if caption_block else None,
+            'caption_position': caption_position,
+            'header_cells': block.get('header_cells', []),
+            'section_id': block.get('section_id'),
+            'section_title': section_title,
+            'appendix_letter': _extract_appendix_letter(section_title),
+        })
+    return tables_meta
+
+
+def _nearest_table_caption_block(blocks: List[Dict[str, Any]], position: int, *, step: int) -> Optional[Dict[str, Any]]:
+    index = position + step
+    while 0 <= index < len(blocks):
+        block = blocks[index]
+        if block['type'] == 'table':
+            return None
+        if block['type'] == 'paragraph' and TABLE_PATTERN.match(block['text']):
+            return block
+        if block['type'] == 'paragraph' and _parse_heading(block['text']) is not None:
+            return None
+        index += step
+    return None
+
+
+def _extract_appendix_letter(title: str) -> Optional[str]:
+    match = APPENDIX_PATTERN.match(' '.join((title or '').split()))
+    return match.group('number') if match else None
+
+
+def _iter_docx_body_blocks(doc: Any):
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    parent = doc.element.body
+    paragraph_index = 0
+    table_index = 0
+    current_section_id = None
+    current_section_title = None
+    for child in parent.iterchildren():
+        if isinstance(child, CT_P):
+            paragraph = Paragraph(child, doc)
+            text = ' '.join(paragraph.text.split())
+            if not text:
+                continue
+            paragraph_index += 1
+            style_name = (getattr(paragraph.style, 'name', '') or '').strip()
+            heading = _parse_heading(text)
+            if heading is None and _looks_like_word_heading(style_name, text):
+                heading = _fallback_heading_from_style(text, 1)
+            if heading is not None:
+                current_section_id = heading['id']
+                current_section_title = heading['title']
+            yield {
+                'type': 'paragraph',
+                'paragraph_index': paragraph_index,
+                'text': text,
+                'style_name': style_name,
+                'section_id': current_section_id,
+                'section_title': current_section_title,
+            }
+        elif isinstance(child, CT_Tbl):
+            table_index += 1
+            table = Table(child, doc)
+            header_cells = []
+            if table.rows:
+                for cell in table.rows[0].cells:
+                    cell_text = ' '.join(par.text.strip() for par in cell.paragraphs if par.text and par.text.strip())
+                    header_cells.append(cell_text)
+            yield {
+                'type': 'table',
+                'table_index': table_index,
+                'header_cells': header_cells,
+                'section_id': current_section_id,
+                'section_title': current_section_title,
+            }
 
 def _extract_table_paragraph_meta(doc: Any) -> List[Dict[str, Any]]:
     table_paragraphs: List[Dict[str, Any]] = []
@@ -321,6 +482,184 @@ def _extract_table_paragraph_meta(doc: Any) -> List[Dict[str, Any]]:
                     paragraph_index += 1
     return table_paragraphs
 
+
+def _extract_docx_formula_meta(doc: Any) -> List[Dict[str, Any]]:
+    formulas: List[Dict[str, Any]] = []
+    paragraphs = list(getattr(doc, 'paragraphs', []))
+    current_section_title = ''
+    current_section_id = None
+
+    for index, paragraph in enumerate(paragraphs, start=1):
+        text = ' '.join(paragraph.text.split())
+        if _starts_with_formula_explanation(text):
+            continue
+        style_name = (getattr(paragraph.style, 'name', '') or '').strip()
+        heading = _parse_heading(text)
+        if heading is None and _looks_like_word_heading(style_name, text):
+            heading = _fallback_heading_from_style(text, 1)
+        if heading is not None:
+            current_section_id = heading['id']
+            current_section_title = heading['title']
+
+        has_math_xml = '<m:oMath' in paragraph._p.xml or '<m:oMathPara' in paragraph._p.xml
+        if not has_math_xml and not _looks_like_formula_paragraph(text):
+            continue
+
+        previous_text = ' '.join(paragraphs[index - 2].text.split()) if index > 1 else ''
+        next_paragraph_index, next_text = _next_nonempty_paragraph(paragraphs, index)
+        formulas.append(
+            {
+                'paragraph_index': index,
+                'text': text,
+                'alignment': _alignment_name(paragraph.alignment),
+                'has_math_xml': has_math_xml,
+                'is_standalone': has_math_xml or _looks_like_formula_standalone(text),
+                'equation_number': _extract_formula_number(text),
+                'raw_equation_number': _extract_raw_formula_number(text),
+                'prev_blank': not previous_text,
+                'next_blank': not next_text,
+                'prev_text': previous_text,
+                'next_text': next_text,
+                'next_paragraph_index': next_paragraph_index,
+                'section_id': current_section_id,
+                'section_title': current_section_title,
+                'appendix_letter': _extract_appendix_letter(current_section_title),
+            }
+        )
+    return formulas
+
+
+def _starts_with_formula_explanation(text: str) -> bool:
+    normalized = ' '.join((text or '').split()).lower()
+    return normalized.startswith('\u0433\u0434\u0435')
+
+
+def _contains_too_many_cyrillic_words_for_formula(text: str) -> bool:
+    words = re.findall(r'[\u0410-\u042f\u0430-\u044f\u0401\u0451]{2,}', text)
+    return len(words) >= 3
+
+
+def _looks_like_formula_paragraph(text: str) -> bool:
+    normalized = ' '.join((text or '').split())
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    if lowered.startswith('\u0433\u0434\u0435'):
+        return False
+    if len(normalized) > 220:
+        return False
+    if not any(symbol in normalized for symbol in ('=', '+', '-', '*', '/', '^')):
+        return False
+    if re.match(r'^\d+(?:\.\d+)*\.?\s+[\u0410-\u042f\u0401A-Z].+$', normalized):
+        return False
+    if re.match(r'^[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u0451][^=]{0,40}[\u2014\u2013-]\s*.+$', normalized):
+        return False
+
+    before, formula, _ = _split_formula_sentence(normalized)
+    if formula and '=' in formula and len(formula) <= 120 and not _contains_too_many_cyrillic_words_for_formula(formula):
+        return True
+
+    has_equation_number = bool(_extract_formula_number(normalized) or _extract_raw_formula_number(normalized))
+    if '=' in normalized:
+        left, right = normalized.split('=', 1)
+        left = left.strip()
+        right = right.strip()
+        if not left or not right:
+            return False
+        if len(left) > 40 or len(right) > 80:
+            return False
+        if _contains_too_many_cyrillic_words_for_formula(normalized):
+            return False
+        lhs_ok = bool(re.search(r'[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9_)\]]$', left))
+        rhs_ok = bool(re.search(r'[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9_(\[]', right) and any(symbol in normalized for symbol in ('=', '+', '-', '*', '/', '^')))
+        if lhs_ok and rhs_ok:
+            return True
+
+    if has_equation_number and re.search(r'[A-Za-z0-9)\]]\s*[+\-*/^]\s*[A-Za-z0-9(\[]', normalized):
+        return True
+    return False
+
+
+def _looks_like_formula_standalone(text: str) -> bool:
+    normalized = ' '.join((text or '').split())
+    if not normalized:
+        return False
+    if len(normalized) > 160:
+        return False
+    if '=' not in normalized and not re.search(r'[+\-*/^]', normalized):
+        return False
+    before, formula, _ = _split_formula_sentence(normalized)
+    if formula and before:
+        return False
+    if not formula and re.search(r'(?i)\b\u0444\u043e\u0440\u043c\u0443\u043b', normalized):
+        return False
+    return not bool(re.search(r'[.!?][^)]*$', normalized))
+
+
+def _split_formula_sentence(text: str) -> tuple[str, str, str]:
+    normalized = ' '.join((text or '').split())
+    if not normalized or '=' not in normalized:
+        return '', '', ''
+    equal_index = normalized.find('=')
+    start = _formula_split_start(normalized, equal_index)
+    if start is None:
+        return '', '', ''
+
+    suffix = normalized[equal_index + 1:]
+    stop_match = re.search(r'\s\u0433\u0434\u0435\b|[.;!?](?:\s|$)', suffix, flags=re.IGNORECASE)
+    end = equal_index + 1 + (stop_match.start() if stop_match else len(suffix))
+
+    formula_text = ' '.join(normalized[start:end].split()).rstrip(' .;!?')
+    before = ' '.join(normalized[:start].split()).rstrip(' .;!?')
+    after = ' '.join(normalized[end:].split()).lstrip(' .;!?')
+    if not formula_text or '=' not in formula_text:
+        return '', '', ''
+    return before, formula_text, after
+
+
+def _formula_split_start(text: str, equal_index: int) -> Optional[int]:
+    prefix = text[:equal_index]
+    lower_prefix = prefix.lower()
+    markers = [
+        'по формуле:',
+        'по формуле',
+        'в формуле:',
+        'в формуле',
+        'уравнение:',
+        'формула:',
+    ]
+    marker_positions = [lower_prefix.rfind(marker) for marker in markers if lower_prefix.rfind(marker) >= 0]
+    if marker_positions:
+        marker_pos = max(marker_positions)
+        for marker in markers:
+            if lower_prefix.startswith(marker, marker_pos):
+                return marker_pos + len(marker)
+
+    match = re.search(r'([^\s=]{1,40}(?:\([^)]*\))?)\s*$', prefix)
+    if not match:
+        return None
+    return match.start(1)
+
+
+def _extract_formula_number(text: str) -> Optional[str]:
+    match = re.search(r'\(((?:\d+(?:\.\d+)*)|(?:[A-ZА-ЯЁ]\.\d+))\)\s*$', ' '.join((text or '').split()))
+    return match.group(1) if match else None
+
+
+def _extract_raw_formula_number(text: str) -> Optional[str]:
+    normalized = ' '.join((text or '').split())
+    if _extract_formula_number(normalized):
+        return None
+    match = re.search(r'\s((?:\d+(?:\.\d+)*)|(?:[A-ZА-ЯЁ]\.\d+))\s*$', normalized)
+    return match.group(1) if match else None
+
+
+def _next_nonempty_paragraph(paragraphs: List[Any], index: int) -> tuple[Optional[int], str]:
+    for next_index in range(index, len(paragraphs)):
+        text = ' '.join(paragraphs[next_index].text.split())
+        if text:
+            return next_index + 1, text
+    return None, ''
 
 def _build_paragraph_meta_entry(paragraph: Any, index: int, text: str, alignment: str, style_name: str) -> Dict[str, Any]:
     return {

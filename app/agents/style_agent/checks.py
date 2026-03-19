@@ -1,4 +1,4 @@
-﻿import json
+import json
 import re
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
@@ -9,76 +9,56 @@ from app.schemas.issue import Issue, IssueLocation, StandardReference, Suggested
 
 
 STYLE_RULES = {
-    "style_mismatch": StandardReference(
+    "spelling_error": StandardReference(
         source="style_rules",
         rule_id="style_rule_00",
-        quote="Текст должен соответствовать научному или деловому стилю изложения.",
+        quote="\u041e\u0440\u0444\u043e\u0433\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043e\u0448\u0438\u0431\u043a\u0438 \u0438 \u044f\u0432\u043d\u044b\u0435 \u043e\u043f\u0435\u0447\u0430\u0442\u043a\u0438 \u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u044f\u0442\u044c.",
     ),
     "colloquial_phrase": StandardReference(
         source="style_rules",
         rule_id="style_rule_01",
-        quote="Следует избегать разговорных и неформальных формулировок.",
+        quote="\u0421\u043b\u0435\u0434\u0443\u0435\u0442 \u0438\u0437\u0431\u0435\u0433\u0430\u0442\u044c \u044f\u0432\u043d\u043e \u0440\u0430\u0437\u0433\u043e\u0432\u043e\u0440\u043d\u044b\u0445 \u0438 \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u043d\u044b\u0445 \u0444\u043e\u0440\u043c\u0443\u043b\u0438\u0440\u043e\u0432\u043e\u043a.",
     ),
     "informal_wording": StandardReference(
         source="style_rules",
         rule_id="style_rule_02",
-        quote="Формулировки должны быть точными и нейтральными.",
-    ),
-    "term_inconsistency": StandardReference(
-        source="style_rules",
-        rule_id="style_rule_03",
-        quote="Термины должны использоваться последовательно по всему тексту.",
+        quote="\u041d\u0435\u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u0430\u044f \u043b\u0435\u043a\u0441\u0438\u043a\u0430 \u0438 \u0433\u0440\u0443\u0431\u044b\u0435 \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u0438\u044f \u043d\u0435\u0434\u043e\u043f\u0443\u0441\u0442\u0438\u043c\u044b \u0432 \u043e\u0442\u0447\u0435\u0442\u0435.",
     ),
     "long_sentence": StandardReference(
         source="style_rules",
-        rule_id="style_rule_04",
-        quote="Слишком длинные предложения ухудшают читаемость текста.",
-    ),
-    "overloaded_sentence": StandardReference(
-        source="style_rules",
-        rule_id="style_rule_05",
-        quote="Перегруженные предложения следует упрощать и разбивать.",
+        rule_id="style_rule_03",
+        quote="\u0427\u0440\u0435\u0437\u043c\u0435\u0440\u043d\u043e \u0434\u043b\u0438\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f \u0441\u043b\u0435\u0434\u0443\u0435\u0442 \u0440\u0430\u0437\u0431\u0438\u0432\u0430\u0442\u044c \u043d\u0430 \u0431\u043e\u043b\u0435\u0435 \u043a\u043e\u0440\u043e\u0442\u043a\u0438\u0435.",
     ),
 }
 
-COLLOQUIAL_REPLACEMENTS: Dict[str, str] = {
-    "короче говоря": "таким образом",
-    "в общем": "в итоге",
-    "как бы": "",
-    "типа": "типа",
-    "ну можно сказать": "можно заключить",
-    "по сути": "по существу",
+HARD_COLLOQUIAL_REPLACEMENTS: Dict[str, str] = {
+    "\u043a\u043e\u0440\u043e\u0447\u0435 \u0433\u043e\u0432\u043e\u0440\u044f": "\u0442\u0430\u043a\u0438\u043c \u043e\u0431\u0440\u0430\u0437\u043e\u043c",
+    "\u043d\u0443 \u043a\u043e\u0440\u043e\u0447\u0435": "\u0442\u0430\u043a\u0438\u043c \u043e\u0431\u0440\u0430\u0437\u043e\u043c",
+    "\u0431\u043b\u0438\u043d": "",
+    "\u043e\u0444\u0438\u0433\u0435\u043d\u043d\u043e": "\u0437\u043d\u0430\u0447\u0438\u0442\u0435\u043b\u044c\u043d\u043e",
+    "\u043a\u0430\u043f\u0435\u0446": "\u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0435\u043d\u043d\u043e",
 }
 
-INFORMAL_REPLACEMENTS: Dict[str, str] = {
-    "штука": "механизм",
-    "круто": "эффективно",
-    "ок": "корректно",
-    "баг": "ошибка",
-    "прикольно": "показательно",
-}
-
-TERM_VARIANTS: Dict[str, List[str]] = {
-    "API": ["api", "апи"],
-    "RAG": ["rag", "раг"],
-    "ГОСТ": ["гост", "gost"],
+HARD_INFORMAL_REPLACEMENTS: Dict[str, str] = {
+    "\u0445\u0440\u0435\u043d\u044c": "\u044d\u043b\u0435\u043c\u0435\u043d\u0442",
+    "\u0444\u0438\u0433\u043d\u044f": "\u043e\u0448\u0438\u0431\u043a\u0430",
+    "\u0434\u0435\u0431\u0438\u043b\u044c\u043d\u044b\u0439": "\u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439",
+    "\u0442\u0443\u043f\u043e\u0439": "\u043d\u0435\u0443\u0434\u0430\u0447\u043d\u044b\u0439",
+    "\u0436\u0435\u0441\u0442\u044c": "\u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0435\u043d\u043d\u0430\u044f \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430",
 }
 
 ALLOWED_SUBTYPES = set(STYLE_RULES)
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9-]+")
-COMMA_CONNECTOR_RE = re.compile(
-    r"\b(который|которая|которые|которое|поскольку|поэтому|следовательно|если|когда|хотя|кроме|однако|причем|потому что)\b",
-    re.IGNORECASE,
-)
+WORD_RE = re.compile(r"[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9-]+")
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", re.DOTALL)
 
 
 def run_style_checks(document: DocumentInput, llm_provider: Optional[LLMProvider] = None) -> List[Issue]:
     llm_issues = _try_run_style_checks_with_llm(document, llm_provider)
     if llm_issues is not None:
-        return _deduplicate_issues(llm_issues)
-    return _deduplicate_issues(_run_style_checks_fallback(document))
+        fallback_issues = _run_style_checks_fallback(document, include_length_checks=False)
+        return _deduplicate_issues(llm_issues + fallback_issues)
+    return _deduplicate_issues(_run_style_checks_fallback(document, include_length_checks=True))
 
 
 def build_style_summary(document: DocumentInput, issues: Optional[List[Issue]] = None) -> Dict[str, object]:
@@ -88,7 +68,7 @@ def build_style_summary(document: DocumentInput, issues: Optional[List[Issue]] =
     return {
         "issues_by_subtype": dict(subtype_counts),
         "fixable_issues": sum(1 for issue in issues if issue.suggestion),
-        "term_conflicts": [issue.evidence for issue in issues if issue.subtype == "term_inconsistency"],
+        "spelling_issues": subtype_counts.get("spelling_error", 0),
     }
 
 
@@ -134,8 +114,9 @@ def _build_style_prompt(document: DocumentInput) -> str:
         "issues": [
             {
                 "paragraph_id": "string or null",
-                "subtype": "style_mismatch | colloquial_phrase | informal_wording | term_inconsistency | long_sentence | overloaded_sentence",
+                "subtype": "spelling_error | long_sentence",
                 "severity": "warning or info",
+                "confidence": "high | medium | low",
                 "message": "short Russian message",
                 "evidence": "why this is a problem in Russian",
                 "before": "original text fragment or null",
@@ -145,13 +126,19 @@ def _build_style_prompt(document: DocumentInput) -> str:
     }
 
     return (
-        "Ты проверяешь текст отчета на соответствие научному или деловому стилю. "
-        "Не считай слово ошибкой само по себе: оценивай его только в контексте предложения. "
-        "Если предложение слишком длинное, предложи более короткую и ясную формулировку. "
-        "Если термин используется непоследовательно, укажи это. "
-        "Верни только JSON без пояснений.\n\n"
-        f"Формат ответа: {json.dumps(schema, ensure_ascii=False)}\n\n"
-        f"Параграфы документа: {json.dumps(serialized, ensure_ascii=False)}"
+        "\u0422\u044b \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u0448\u044c \u0442\u0435\u043a\u0441\u0442 \u043e\u0442\u0447\u0435\u0442\u0430 \u0432 \u043e\u0447\u0435\u043d\u044c \u043a\u043e\u043d\u0441\u0435\u0440\u0432\u0430\u0442\u0438\u0432\u043d\u043e\u043c \u0440\u0435\u0436\u0438\u043c\u0435. "
+        "\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043d\u043e \u043d\u0430\u0445\u043e\u0434\u0438\u0442\u044c \u0442\u043e\u043b\u044c\u043a\u043e \u0442\u0440\u0438 \u043a\u043b\u0430\u0441\u0441\u0430 \u043f\u0440\u043e\u0431\u043b\u0435\u043c: "
+        "1) \u044f\u0432\u043d\u044b\u0435 \u043e\u0440\u0444\u043e\u0433\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u043e\u0448\u0438\u0431\u043a\u0438 \u0438 \u043e\u043f\u0435\u0447\u0430\u0442\u043a\u0438, "
+        "2) \u0433\u0440\u0443\u0431\u044b\u0435 \u0440\u0430\u0437\u0433\u043e\u0432\u043e\u0440\u043d\u044b\u0435, \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u043d\u044b\u0435 \u0438\u043b\u0438 \u043d\u0435\u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u044b\u0435 \u0441\u043b\u043e\u0432\u0430, "
+        "3) \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0442\u0435\u043b\u044c\u043d\u043e \u0447\u0440\u0435\u0437\u043c\u0435\u0440\u043d\u043e \u0434\u043b\u0438\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0442\u044f\u043d\u0443\u0442\u0441\u044f \u043f\u043e\u0447\u0442\u0438 \u043d\u0430 \u043f\u043e\u043b\u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b. "
+        "\u041d\u0435 \u043f\u0435\u0440\u0435\u043f\u0438\u0441\u044b\u0432\u0430\u0439 \u043d\u0435\u0439\u0442\u0440\u0430\u043b\u044c\u043d\u0443\u044e \u043b\u0435\u043a\u0441\u0438\u043a\u0443 \u043d\u0430 \u0431\u043e\u043b\u0435\u0435 \u043d\u0430\u0443\u0447\u043d\u0443\u044e. "
+        "\u041d\u0435 \u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u0439 \u0441\u0442\u0438\u043b\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u0443\u043b\u0443\u0447\u0448\u0435\u043d\u0438\u044f \u0440\u0430\u0434\u0438 \u0443\u043b\u0443\u0447\u0448\u0435\u043d\u0438\u044f. "
+        "\u041d\u0435 \u0442\u0440\u043e\u0433\u0430\u0439 \u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u0442\u0435\u0440\u043c\u0438\u043d\u044b, \u0435\u0441\u043b\u0438 \u043e\u043d\u0438 \u0443\u0436\u0435 \u043d\u0435\u0439\u0442\u0440\u0430\u043b\u044c\u043d\u044b. "
+        "\u041d\u0435 \u043f\u043e\u043c\u0435\u0447\u0430\u0439 \u043e\u0431\u044b\u0447\u043d\u044b\u0435 \u0434\u043b\u0438\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u044f, \u0435\u0441\u043b\u0438 \u043e\u043d\u0438 \u0435\u0449\u0435 \u0447\u0438\u0442\u0430\u0435\u043c\u044b. "
+        "\u0414\u043b\u044f \u0441\u043e\u043c\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0445 \u0441\u043b\u0443\u0447\u0430\u0435\u0432 \u0441\u0442\u0430\u0432\u044c confidence=low. "
+        "\u0412\u0435\u0440\u043d\u0438 \u0442\u043e\u043b\u044c\u043a\u043e JSON \u0431\u0435\u0437 \u043f\u043e\u044f\u0441\u043d\u0435\u043d\u0438\u0439.\n\n"
+        f"\u0424\u043e\u0440\u043c\u0430\u0442 \u043e\u0442\u0432\u0435\u0442\u0430: {json.dumps(schema, ensure_ascii=False)}\n\n"
+        f"\u041f\u0430\u0440\u0430\u0433\u0440\u0430\u0444\u044b \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430: {json.dumps(serialized, ensure_ascii=False)}"
     )
 
 
@@ -186,6 +173,8 @@ def _issue_from_llm_payload(index: int, raw_issue: object, paragraph_map: Dict[s
     subtype = str(raw_issue.get("subtype") or "").strip()
     if subtype not in ALLOWED_SUBTYPES:
         return None
+    if subtype not in {"spelling_error", "long_sentence"}:
+        return None
 
     confidence = str(raw_issue.get("confidence") or "medium").strip().lower()
     if confidence == "low":
@@ -207,8 +196,8 @@ def _issue_from_llm_payload(index: int, raw_issue: object, paragraph_map: Dict[s
     elif after:
         suggestion = after
 
-    message = _normalize_optional_text(raw_issue.get("message")) or "Обнаружено стилистическое замечание"
-    evidence = _normalize_optional_text(raw_issue.get("evidence")) or "LLM обнаружила стилистическую проблему в тексте документа."
+    message = _normalize_optional_text(raw_issue.get("message")) or "\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u043e \u0441\u0442\u0438\u043b\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0435 \u0437\u0430\u043c\u0435\u0447\u0430\u043d\u0438\u0435"
+    evidence = _normalize_optional_text(raw_issue.get("evidence")) or "LLM \u043e\u0431\u043d\u0430\u0440\u0443\u0436\u0438\u043b\u0430 \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0443 \u0432 \u0442\u0435\u043a\u0441\u0442\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430."
 
     return Issue(
         id=f"issue_style_llm_{index:03d}",
@@ -218,7 +207,7 @@ def _issue_from_llm_payload(index: int, raw_issue: object, paragraph_map: Dict[s
         message=message,
         location=location,
         evidence=evidence,
-        standard_reference=STYLE_RULES.get(subtype, STYLE_RULES["style_mismatch"]),
+        standard_reference=STYLE_RULES[subtype],
         suggestion=suggestion,
         agent="style_agent",
     )
@@ -230,88 +219,55 @@ def _normalize_optional_text(value: object) -> str:
     return str(value).strip()
 
 
-def _run_style_checks_fallback(document: DocumentInput) -> List[Issue]:
+def _run_style_checks_fallback(document: DocumentInput, *, include_length_checks: bool) -> List[Issue]:
     issues: List[Issue] = []
     issue_id = 1
-    colloquial_hits = 0
-    informal_hits = 0
 
     for paragraph in _iter_text_units(document):
-        for phrase, replacement in COLLOQUIAL_REPLACEMENTS.items():
-            if phrase not in _normalize(paragraph.text):
+        normalized_text = _normalize(paragraph.text)
+        for phrase, replacement in HARD_COLLOQUIAL_REPLACEMENTS.items():
+            if phrase not in normalized_text:
                 continue
             before, after = _replace_fragment(paragraph.text, phrase, replacement)
             issues.append(_make_issue(
                 issue_id=issue_id,
                 subtype="colloquial_phrase",
                 severity="warning",
-                message="Обнаружена разговорная формулировка",
+                message="\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u0430 \u0433\u0440\u0443\u0431\u043e \u0440\u0430\u0437\u0433\u043e\u0432\u043e\u0440\u043d\u0430\u044f \u0444\u043e\u0440\u043c\u0443\u043b\u0438\u0440\u043e\u0432\u043a\u0430",
                 location=_location_from_paragraph(paragraph),
-                evidence=f"Фрагмент: '{_extract_fragment(paragraph.text, phrase)}'",
+                evidence=f"\u0424\u0440\u0430\u0433\u043c\u0435\u043d\u0442: '{_extract_fragment(paragraph.text, phrase)}'",
                 suggestion=SuggestedFix(before=before, after=after),
             ))
             issue_id += 1
-            colloquial_hits += 1
 
-        for word, replacement in INFORMAL_REPLACEMENTS.items():
-            if not re.search(rf"\b{re.escape(word)}\b", _normalize(paragraph.text)):
+        for word, replacement in HARD_INFORMAL_REPLACEMENTS.items():
+            if not re.search(rf"\b{re.escape(word)}\b", normalized_text):
                 continue
             before, after = _replace_fragment(paragraph.text, word, replacement)
             issues.append(_make_issue(
                 issue_id=issue_id,
                 subtype="informal_wording",
                 severity="warning",
-                message="Обнаружено слишком простое или неформальное слово",
+                message="\u041e\u0431\u043d\u0430\u0440\u0443\u0436\u0435\u043d\u043e \u043f\u0440\u043e\u0441\u0442\u043e\u0440\u0435\u0447\u043d\u043e\u0435 \u0438\u043b\u0438 \u043d\u0435\u043d\u043e\u0440\u043c\u0430\u0442\u0438\u0432\u043d\u043e\u0435 \u0441\u043b\u043e\u0432\u043e",
                 location=_location_from_paragraph(paragraph),
-                evidence=f"Слово или оборот: '{_extract_fragment(paragraph.text, word)}'",
+                evidence=f"\u0421\u043b\u043e\u0432\u043e \u0438\u043b\u0438 \u043e\u0431\u043e\u0440\u043e\u0442: '{_extract_fragment(paragraph.text, word)}'",
                 suggestion=SuggestedFix(before=before, after=after),
             ))
             issue_id += 1
-            informal_hits += 1
 
         for sentence in _split_sentences(paragraph.text):
             word_count = len(WORD_RE.findall(sentence))
-            if word_count >= 35 or len(sentence) >= 240:
+            if word_count >= 55 or len(sentence) >= 420:
                 issues.append(_make_issue(
                     issue_id=issue_id,
                     subtype="long_sentence",
                     severity="info",
-                    message="Обнаружено слишком длинное предложение",
+                    message="\u041f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0434\u043b\u0438\u043d\u043d\u043e\u0435 \u0438 \u0435\u0433\u043e \u0441\u0442\u043e\u0438\u0442 \u0440\u0430\u0437\u0431\u0438\u0442\u044c",
                     location=_location_from_paragraph(paragraph),
-                    evidence=f"Предложение содержит {word_count} слов.",
-                    suggestion="Разбейте предложение на 2-3 более короткие части и оставьте в каждой одно ключевое утверждение.",
+                    evidence=f"\u041f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 {word_count} \u0441\u043b\u043e\u0432.",
+                    suggestion="\u0420\u0430\u0437\u0431\u0435\u0439\u0442\u0435 \u043f\u0440\u0435\u0434\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u043d\u0430 2-3 \u0431\u043e\u043b\u0435\u0435 \u043a\u043e\u0440\u043e\u0442\u043a\u0438\u0435 \u0447\u0430\u0441\u0442\u0438 \u0438 \u043e\u0441\u0442\u0430\u0432\u044c\u0442\u0435 \u0432 \u043a\u0430\u0436\u0434\u043e\u0439 \u043e\u0434\u043d\u043e \u043a\u043b\u044e\u0447\u0435\u0432\u043e\u0435 \u0443\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u0435.",
                 ))
                 issue_id += 1
-
-            comma_count = sentence.count(",")
-            connector_count = len(COMMA_CONNECTOR_RE.findall(sentence))
-            if len(sentence) >= 180 and (comma_count >= 4 or connector_count >= 3):
-                issues.append(_make_issue(
-                    issue_id=issue_id,
-                    subtype="overloaded_sentence",
-                    severity="info",
-                    message="Предложение перегружено и трудно для восприятия",
-                    location=_location_from_paragraph(paragraph),
-                    evidence=f"Предложение содержит {comma_count} запятых и {connector_count} сложных связок.",
-                    suggestion="Упростите конструкцию: разделите смысловые части и уберите лишние придаточные обороты.",
-                ))
-                issue_id += 1
-
-    for payload in _check_term_consistency(document):
-        issues.append(_make_issue(issue_id=issue_id, **payload))
-        issue_id += 1
-
-    if colloquial_hits + informal_hits >= 2:
-        first_issue = next(issue for issue in issues if issue.subtype in {"colloquial_phrase", "informal_wording"})
-        issues.append(_make_issue(
-            issue_id=issue_id,
-            subtype="style_mismatch",
-            severity="warning",
-            message="Текст частично не соответствует научному или деловому стилю",
-            location=first_issue.location,
-            evidence="В документе обнаружены разговорные или неформальные формулировки.",
-            suggestion="Замените разговорные и бытовые выражения на нейтральные формулировки.",
-        ))
 
     return issues
 
@@ -331,32 +287,8 @@ def _iter_text_units(document: DocumentInput) -> List[Paragraph]:
     ]
 
 
-def _check_term_consistency(document: DocumentInput) -> List[dict]:
-    text = "\n".join(unit.text for unit in _iter_text_units(document))
-    normalized = _normalize(text)
-    issues: List[dict] = []
-    for canonical, variants in TERM_VARIANTS.items():
-        present = [variant for variant in variants if re.search(rf"\b{re.escape(variant)}\b", normalized)]
-        if len(present) <= 1:
-            continue
-        example_variant = present[0]
-        conflicting_variant = present[1]
-        issues.append({
-            "subtype": "term_inconsistency",
-            "severity": "warning",
-            "location": IssueLocation(),
-            "message": "Обнаружена терминологическая несогласованность",
-            "evidence": f"В документе используются варианты '{example_variant}' и '{conflicting_variant}' для термина {canonical}.",
-            "suggestion": SuggestedFix(
-                before=f"Используемые варианты: {', '.join(present)}",
-                after=f"Используйте один вариант термина: {canonical}",
-            ),
-        })
-    return issues
-
-
 def _normalize(text: str) -> str:
-    return " ".join(text.lower().replace("ё", "е").split())
+    return " ".join(text.lower().replace("\u0451", "\u0435").split())
 
 
 def _split_sentences(text: str) -> List[str]:

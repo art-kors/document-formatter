@@ -7,14 +7,12 @@ from typing import Dict, List, Optional
 
 from app.schemas.document import DocumentInput, Paragraph, Position, Section
 from app.schemas.issue import Issue, SuggestedFix
+from app.utils.text import normalize_whitespace
 
 
-FIGURE_CAPTION_RE = re.compile(
-    r"^(?:Рисунок|Рис\.?|рис\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[—–-]?\s*(?P<title>.*)$",
-    re.IGNORECASE,
-)
-TABLE_CAPTION_RE = re.compile(r"^Таблица\s+(?P<number>\d+)\s*[—-]?\s*(?P<title>.*)$", re.IGNORECASE)
-APPENDIX_RE = re.compile(r"^Приложение\s+([А-ЯA-Z])(?:\s*[—-]?\s*(.*))?$", re.IGNORECASE)
+FIGURE_CAPTION_RE = re.compile(r"^(?:\u0420\u0438\u0441\u0443\u043d\u043e(?:\u043a)?|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$", re.IGNORECASE)
+TABLE_CAPTION_RE = re.compile(r"^(?:\u0422\u0430\u0431\u043b\u0438\u0446(?:\u0430)?)\s+(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$", re.IGNORECASE)
+APPENDIX_RE = re.compile(r"^\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435\s+([\u0410-\u042fA-Z])(?:\s*[\u2014\u2013-]?\s*(.*))?$", re.IGNORECASE)
 
 CONTENT_TYPES = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -108,6 +106,16 @@ def _apply_rag_fixes(
     sections_by_id: Dict[str, Section],
     paragraphs_by_id: Dict[str, Paragraph],
 ) -> None:
+    structural_titles = {
+        'содержание',
+        'оглавление',
+        'реферат',
+        'список использованных источников',
+        'список литературы',
+        'библиографический список',
+        'источники и литература',
+    }
+
     for section in document.sections:
         if section.title.endswith('.'):
             section.title = section.title.rstrip('.').strip()
@@ -120,23 +128,42 @@ def _apply_rag_fixes(
         title = _extract_title(figure.caption, f'Иллюстрация {number}', FIGURE_CAPTION_RE).rstrip('.').strip()
         figure.caption = f'Рисунок {number} - {title}'
 
+    tables_meta = document.meta.extras.get('docx_tables_meta', []) if document.meta and document.meta.extras else []
+    appendix_table_counters = {}
     for index, table in enumerate(document.tables, start=1):
-        number = _extract_number(index, table.caption, TABLE_CAPTION_RE)
-        title = _extract_title(table.caption, f'Сравнение показателей {number}', TABLE_CAPTION_RE)
+        meta = tables_meta[index - 1] if index - 1 < len(tables_meta) else {}
+        appendix_letter = meta.get('appendix_letter') if isinstance(meta, dict) else None
+        if appendix_letter:
+            appendix_table_counters.setdefault(str(appendix_letter), 0)
+            appendix_table_counters[str(appendix_letter)] += 1
+            number = f"{appendix_letter}.{appendix_table_counters[str(appendix_letter)]}"
+            title = _extract_title(table.caption, f'Таблица приложения {appendix_letter}', TABLE_CAPTION_RE).rstrip('.').strip()
+        else:
+            number = _extract_number(index, table.caption, TABLE_CAPTION_RE)
+            title = _extract_title(table.caption, f'Сравнение показателей {number}', TABLE_CAPTION_RE).rstrip('.').strip()
         table.caption = f'Таблица {number} - {title}'
 
-    if any(issue.subtype == 'invalid_appendix_heading' for issue in issues):
+    for section in document.sections:
+        normalized = normalize_whitespace(section.title).lower()
+        if normalized in structural_titles:
+            section.number = ''
+            section.title = normalize_whitespace(section.title).upper().rstrip('.')
+
+    if any(issue.subtype in {'invalid_appendix_heading', 'appendix_heading_single_line'} for issue in issues):
         for section in document.sections:
-            if section.title.lower().startswith('приложение'):
-                suffix = APPENDIX_RE.match(section.title)
-                title_tail = suffix.group(2).strip() if suffix and suffix.group(2) else 'Материалы'
-                section.number = 'А'
-                section.title = f'Приложение А - {title_tail}'
+            if normalize_whitespace(section.title).lower().startswith('приложение'):
+                match = APPENDIX_RE.match(normalize_whitespace(section.title))
+                letter = (match.group(1).upper() if match else 'А')
+                title_tail = normalize_whitespace(match.group(2) or '') if match else ''
+                if not title_tail:
+                    title_tail = 'Материалы'
+                section.number = ''
+                section.title = f'Приложение {letter} - {title_tail}'
                 break
 
     if any(issue.subtype == 'missing_references_section' for issue in issues):
         if not any('источ' in section.title.lower() or 'литератур' in section.title.lower() for section in document.sections):
-            _append_required_section(document, 'Список использованных источников', body='1. Добавьте используемые источники.')
+            _append_required_section(document, 'СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ', body='1. Добавьте используемые источники.')
 
     if any(issue.subtype == 'missing_figure_reference' for issue in issues):
         _append_reference_sentence(document, 'На рисунке 1 представлена ключевая схема решения.')
@@ -158,29 +185,39 @@ def _replace_or_assign(source: str, before: str, after: str) -> str:
 
 def _renumber_sections(document: DocumentInput) -> None:
     counters: List[int] = []
+    structural_titles = {
+        'содержание',
+        'оглавление',
+        'реферат',
+        'список использованных источников',
+        'список литературы',
+        'библиографический список',
+        'источники и литература',
+    }
 
     for section in document.sections:
-        normalized_title = section.title.lower().strip()
+        normalized_title = normalize_whitespace(section.title).lower()
         if normalized_title.startswith('приложение'):
-            section.number = 'А'
+            section.number = ''
+            section.level = 1
+            continue
+        if normalized_title in structural_titles:
+            section.number = ''
             section.level = 1
             continue
 
         level = max(1, int(section.level or 1))
         if level > len(counters) + 1:
             level = len(counters) + 1
-
         if len(counters) < level:
             counters.extend([0] * (level - len(counters)))
         else:
             counters = counters[:level]
-
         while level > 1 and counters[level - 2] == 0:
             level -= 1
             counters = counters[:level]
             if len(counters) < level:
                 counters.extend([0] * (level - len(counters)))
-
         counters[level - 1] += 1
         section.level = level
         section.number = '.'.join(str(part) for part in counters[:level])

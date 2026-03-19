@@ -1,9 +1,12 @@
+import json
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from app.api import dependencies
 from app.api.dependencies import get_chat_provider, get_embedding_provider, get_llm_provider
+from app.llm.local_chat_provider import LocalChatProvider
 from app.llm.local_provider import LocalProvider
 from app.orchestration.pipeline import DocumentPipeline
 from app.schemas.document import DocumentInput
@@ -26,31 +29,70 @@ class FakeSentenceTransformer:
         return base
 
 
+class _FakeHttpResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def read(self):
+        return json.dumps(self._payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 class LocalProviderTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        dependencies._chat_provider = None
+        dependencies._embedding_provider = None
+
     def test_embed_is_non_empty_and_stable(self) -> None:
         provider = LocalProvider(encoder=FakeSentenceTransformer())
-        left = provider.embed("??????? ??????? ?????? ???? ??? ????????????")
-        right = provider.embed("??????? ??????? ?????? ???? ??? ????????????")
-        other = provider.embed("?????? ?????????????? ?????????? ?????? ???? ? ????? ?????????")
+        left = provider.embed("????????? ?????? ?????? ?????????? ?????????? ??????????")
+        right = provider.embed("????????? ?????? ?????? ?????????? ?????????? ??????????")
+        other = provider.embed("?????? ????? ?????? ???????? ?????? ??????")
 
         self.assertTrue(left)
         self.assertEqual(len(left), 8)
         self.assertEqual(left, right)
         self.assertNotEqual(left, other)
 
+    def test_local_chat_provider_calls_ollama_endpoint(self) -> None:
+        provider = LocalChatProvider(base_url="http://127.0.0.1:11434", model="qwen2.5:7b", temperature=0.1)
+
+        with patch("app.llm.local_chat_provider.request.urlopen", return_value=_FakeHttpResponse({"response": "??????"})) as mocked:
+            result = provider.chat("??????? ?????")
+
+        self.assertEqual(result, "??????")
+        request_obj = mocked.call_args.args[0]
+        self.assertEqual(request_obj.full_url, "http://127.0.0.1:11434/api/generate")
+        self.assertEqual(request_obj.get_method(), "POST")
+        body = json.loads(request_obj.data.decode("utf-8"))
+        self.assertEqual(body["model"], "qwen2.5:7b")
+        self.assertEqual(body["prompt"], "??????? ?????")
+        self.assertFalse(body["stream"])
+
     def test_dependencies_can_select_local_mode_via_legacy_model_mode(self) -> None:
         old_mode = os.environ.get("MODEL_MODE")
+        old_chat = os.environ.get("CHAT_MODE")
         try:
             os.environ["MODEL_MODE"] = "local"
+            os.environ.pop("CHAT_MODE", None)
             dependencies._chat_provider = None
             provider = get_llm_provider()
-            self.assertIsInstance(provider, LocalProvider)
+            self.assertIsInstance(provider, LocalChatProvider)
         finally:
             dependencies._chat_provider = None
             if old_mode is None:
                 os.environ.pop("MODEL_MODE", None)
             else:
                 os.environ["MODEL_MODE"] = old_mode
+            if old_chat is None:
+                os.environ.pop("CHAT_MODE", None)
+            else:
+                os.environ["CHAT_MODE"] = old_chat
 
     def test_dependencies_can_split_chat_and_embedding_modes(self) -> None:
         old_chat = os.environ.get("CHAT_MODE")
@@ -61,7 +103,7 @@ class LocalProviderTests(unittest.TestCase):
             os.environ["EMBED_MODE"] = "local"
             dependencies._chat_provider = None
             dependencies._embedding_provider = None
-            self.assertIsInstance(get_chat_provider(), LocalProvider)
+            self.assertIsInstance(get_chat_provider(), LocalChatProvider)
             self.assertIsInstance(get_embedding_provider(), LocalProvider)
         finally:
             dependencies._chat_provider = None

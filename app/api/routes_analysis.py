@@ -5,7 +5,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from app.api.dependencies import get_pipeline
+from app.api.dependencies import build_pipeline, get_pipeline, resolve_runtime_modes
 from app.fixing.docx_editor import apply_fixes_to_source_docx
 from app.fixing.document_fixer import apply_fixes, build_corrected_docx
 from app.parsing.document_parser import extract_text, extract_text_from_docx, extract_text_from_pdf, extract_text_from_txt
@@ -83,9 +83,12 @@ async def analyze_uploaded_file(
     standard_id: str = Form(...),
     document_id: str | None = Form(default=None),
     include_parsed_document: bool = Form(default=False),
+    chat_mode: str | None = Form(default=None),
+    embed_mode: str | None = Form(default=None),
 ):
     try:
-        pipeline = get_pipeline()
+        resolved_chat_mode, resolved_embed_mode = resolve_runtime_modes(chat_mode, embed_mode)
+        pipeline = build_pipeline(chat_mode=chat_mode, embed_mode=embed_mode)
         filename = document.filename or 'uploaded_document'
         content = await document.read()
         ext = filename.lower().split('.')[-1] if '.' in filename else ''
@@ -139,11 +142,18 @@ async def analyze_uploaded_file(
             )
 
         result = pipeline.analyze_document(parsed_document)
+        runtime_modes = {
+            'chat_mode': resolved_chat_mode or 'default',
+            'embed_mode': resolved_embed_mode or 'default',
+        }
         if include_parsed_document:
             payload = result.model_dump()
             payload["parsed_document"] = parsed_document.model_dump()
+            payload["runtime_modes"] = runtime_modes
             return JSONResponse(content=payload)
-        return result
+        payload = result.model_dump()
+        payload["runtime_modes"] = runtime_modes
+        return JSONResponse(content=payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
