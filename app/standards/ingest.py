@@ -11,6 +11,7 @@ from app.standards.graph_builder import KnowledgeGraph
 from app.standards.parser import parse_standard_text
 from app.standards.storage import (
     graph_path_for,
+    standard_dir_for,
     standard_cleaned_text_path_for,
     standard_parsed_path_for,
     standard_raw_text_path_for,
@@ -79,11 +80,15 @@ class StandardIngestor:
         )
 
     def extract_raw_text_from_pdf(self, standard_id: str) -> str:
-        source_path = standard_source_pdf_path_for(standard_id)
-        if not Path(source_path).exists():
-            raise FileNotFoundError(f"Standard PDF not found: {source_path}")
+        source_path = Path(standard_source_pdf_path_for(standard_id))
+        if not source_path.exists():
+            standard_dir = Path(standard_dir_for(standard_id))
+            pdf_candidates = sorted(standard_dir.glob("*.pdf"))
+            if not pdf_candidates:
+                raise FileNotFoundError(f"Standard PDF not found in {standard_dir}")
+            source_path = pdf_candidates[0]
 
-        file_bytes = Path(source_path).read_bytes()
+        file_bytes = source_path.read_bytes()
         raw_text = extract_text_from_pdf(file_bytes)
         Path(standard_raw_text_path_for(standard_id)).write_text(raw_text, encoding="utf-8")
         return raw_text

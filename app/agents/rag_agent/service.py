@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.agents.rag_agent.checker import analyze_document_against_standard
@@ -7,6 +8,7 @@ from app.schemas.agent_result import AgentResult
 from app.schemas.document import DocumentInput
 from app.standards.ingest import StandardArtifacts, StandardIngestor
 from app.standards.registry import StandardRegistry
+from app.standards.storage import standard_parsed_path_for
 
 
 class GraphRAGService:
@@ -88,4 +90,7 @@ class GraphRAGService:
         return self.artifacts.graph_path
 
     def analyze(self, document: DocumentInput, standard_id: str) -> AgentResult:
+        parsed_path = Path(standard_parsed_path_for(standard_id))
+        if not parsed_path.exists():
+            self.ingestor.ingest_pdf(standard_id)
         return analyze_document_against_standard(document, standard_id)

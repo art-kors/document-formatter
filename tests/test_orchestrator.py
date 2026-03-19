@@ -128,6 +128,14 @@ if __name__ == "__main__":
 class StandardRegistryTests(unittest.TestCase):
     def test_register_uploaded_standard_generates_ascii_id_for_cyrillic_name(self) -> None:
         registry = StandardRegistry()
-        standard_id = registry.register_uploaded_standard('???? 2.105-2019.pdf')
+        standard_id = registry.register_uploaded_standard('ГОСТ 2.105-2019.pdf')
         self.assertTrue(all(ord(ch) < 128 for ch in standard_id))
         self.assertNotEqual(standard_id, '')
+
+    def test_registry_discovers_storage_standard_directory(self) -> None:
+        registry = StandardRegistry()
+        descriptor = registry.get('gost_2_105_2019')
+
+        self.assertIsNotNone(descriptor)
+        self.assertEqual(descriptor.title, 'ГОСТ 2.105-2019')
+        self.assertTrue(descriptor.source_path.endswith('source_2.pdf'))

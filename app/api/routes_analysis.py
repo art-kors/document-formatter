@@ -1,10 +1,12 @@
-﻿import json
+﻿from time import perf_counter, process_time
+import json
 import os
 from urllib.parse import quote
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
+from app.analytics.analysis_logger import write_analysis_log
 from app.api.dependencies import build_pipeline, get_pipeline, resolve_runtime_modes
 from app.fixing.docx_editor import apply_fixes_to_source_docx
 from app.fixing.document_fixer import apply_fixes, build_corrected_docx
@@ -86,6 +88,8 @@ async def analyze_uploaded_file(
     chat_mode: str | None = Form(default=None),
     embed_mode: str | None = Form(default=None),
 ):
+    request_started = perf_counter()
+    cpu_started = process_time()
     try:
         resolved_chat_mode, resolved_embed_mode = resolve_runtime_modes(chat_mode, embed_mode)
         pipeline = build_pipeline(chat_mode=chat_mode, embed_mode=embed_mode)
@@ -94,6 +98,7 @@ async def analyze_uploaded_file(
         ext = filename.lower().split('.')[-1] if '.' in filename else ''
         content_type = document.content_type or ''
 
+        parse_started = perf_counter()
         if ext in {'docx', 'doc'} or 'wordprocessingml' in content_type:
             try:
                 parsed_document = parse_docx_to_document(
@@ -141,18 +146,33 @@ async def analyze_uploaded_file(
                 document_id=document_id,
             )
 
+        parsing_time_ms = int((perf_counter() - parse_started) * 1000)
         result = pipeline.analyze_document(parsed_document)
         runtime_modes = {
             'chat_mode': resolved_chat_mode or 'default',
             'embed_mode': resolved_embed_mode or 'default',
         }
+        request_wall_time_ms = int((perf_counter() - request_started) * 1000)
+        request_cpu_time_ms = int((process_time() - cpu_started) * 1000)
+        analytics_log_path = write_analysis_log(
+            document=parsed_document,
+            result=result,
+            runtime_modes=runtime_modes,
+            source_format=parsed_document.meta.extras.get('source_format', ext or 'unknown'),
+            file_size_bytes=len(content),
+            parsing_time_ms=parsing_time_ms,
+            request_wall_time_ms=request_wall_time_ms,
+            request_cpu_time_ms=request_cpu_time_ms,
+        )
         if include_parsed_document:
             payload = result.model_dump()
             payload["parsed_document"] = parsed_document.model_dump()
             payload["runtime_modes"] = runtime_modes
+            payload["analytics_log_path"] = analytics_log_path
             return JSONResponse(content=payload)
         payload = result.model_dump()
         payload["runtime_modes"] = runtime_modes
+        payload["analytics_log_path"] = analytics_log_path
         return JSONResponse(content=payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -230,3 +250,4 @@ async def download_graph():
             media_type="application/json",
         )
     raise HTTPException(status_code=404, detail="Graph file not found")
+

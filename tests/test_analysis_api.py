@@ -1,4 +1,5 @@
 ﻿from collections import Counter
+import os
 from io import BytesIO
 import json
 import unittest
@@ -76,11 +77,17 @@ class AnalyzeFileApiTests(unittest.TestCase):
         StandardIngestor().ingest_pdf('gost_7_32_2017')
 
     def setUp(self) -> None:
+        self._old_log_dir = os.environ.get('ANALYSIS_LOG_DIR')
+        os.environ['ANALYSIS_LOG_DIR'] = 'logs_test_runtime'
         dependencies._pipeline = DocumentPipeline(llm_provider=FakeProvider(), registry=StandardRegistry())
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
         dependencies._pipeline = None
+        if self._old_log_dir is None:
+            os.environ.pop('ANALYSIS_LOG_DIR', None)
+        else:
+            os.environ['ANALYSIS_LOG_DIR'] = self._old_log_dir
 
     def test_analyze_file_endpoint_returns_report(self) -> None:
         text = '1 Основная часть.\n\nНа рисунке 1 показана архитектура решения.\n\n6 Список использованных источников\n\n'
