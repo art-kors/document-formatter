@@ -2,6 +2,7 @@ import os
 from typing import Optional
 
 from app.llm.base import EmbeddingProvider, LLMProvider
+from app.llm.local_chat_provider import LocalChatProvider
 from app.llm.local_provider import LocalProvider
 from app.llm.mistral_provider import MistralProvider
 from app.orchestration.pipeline import DocumentPipeline
@@ -34,14 +35,14 @@ def _normalize_mode(value: Optional[str], *, env_name: str) -> str:
 
 def _build_chat_provider(mode: str) -> LLMProvider:
     if mode == "local":
-        return LocalProvider()
+        return LocalChatProvider()
     if mode == "api":
         return MistralProvider()
     if not mode:
         try:
             return MistralProvider()
         except ValueError:
-            return LocalProvider()
+            return LocalChatProvider()
     raise ValueError("Unsupported CHAT_MODE. Use 'local' or 'api'.")
 
 
