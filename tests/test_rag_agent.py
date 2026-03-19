@@ -131,6 +131,48 @@ class GraphRAGCheckerTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         StandardIngestor().ingest_pdf(cls.standard_id)
 
+
+    def test_detected_title_page_does_not_create_alignment_issues(self) -> None:
+        document = DocumentInput(
+            document_id="doc_title_page_only_presence",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "???????????? ????? ? ??????? ??????????? ?????????? ?????????", "alignment": "left", "style": "Normal"},
+                        {"paragraph_index": 2, "text": "???????????", "alignment": "left", "style": "Normal"},
+                        {"paragraph_index": 3, "text": "?????", "alignment": "left", "style": "Normal"},
+                        {"paragraph_index": 4, "text": "???? ??????", "alignment": "left", "style": "Normal"},
+                        {"paragraph_index": 5, "text": "?????? 2026", "alignment": "left", "style": "Normal"},
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="????????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="?????", position=Position(page=2, paragraph_index=6))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertNotIn("title_page_right_alignment", subtypes)
+        self.assertNotIn("title_page_center_alignment", subtypes)
+
+    def test_truncated_figure_prefix_is_detected_as_caption_format_issue(self) -> None:
+        document = DocumentInput(
+            document_id="doc_truncated_figure_prefix",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(filename="report.docx", title="Report"),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="??. ?????? 1 ????.", position=Position(page=1, paragraph_index=1))],
+            figures=[FigureItem(id="fig_1", caption="?????? 1 - ??????????? ???????", position=Position(page=1, paragraph_index=2))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertNotIn("missing_figure_caption", [issue.subtype for issue in result.issues])
+        self.assertIn("invalid_figure_caption_format", [issue.subtype for issue in result.issues])
+
     def test_missing_figure_caption_creates_issue(self) -> None:
         document = DocumentInput(
             document_id="doc_fig",
@@ -336,6 +378,111 @@ class GraphRAGCheckerTests(unittest.TestCase):
         subtypes = [issue.subtype for issue in result.issues]
         self.assertIn("missing_title_page", subtypes)
         self.assertIn("missing_contents_section", subtypes)
+
+
+    def test_docx_page_numbering_checks_create_issues(self) -> None:
+        document = DocumentInput(
+            document_id="doc_page_numbering",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_page_numbering": [
+                        {
+                            "section_index": 1,
+                            "different_first_page": False,
+                            "default_footer_has_page_field": True,
+                            "default_footer_alignment": "left",
+                            "first_footer_has_page_field": False,
+                            "first_footer_alignment": None,
+                            "default_header_has_page_field": True,
+                            "default_header_alignment": "center",
+                            "first_header_has_page_field": False,
+                            "first_header_alignment": None,
+                            "even_header_has_page_field": False,
+                            "even_header_alignment": None,
+                            "page_number_start": None,
+                        },
+                        {
+                            "section_index": 2,
+                            "different_first_page": False,
+                            "default_footer_has_page_field": True,
+                            "default_footer_alignment": "center",
+                            "first_footer_has_page_field": False,
+                            "first_footer_alignment": None,
+                            "default_header_has_page_field": False,
+                            "default_header_alignment": None,
+                            "first_header_has_page_field": False,
+                            "first_header_alignment": None,
+                            "even_header_has_page_field": False,
+                            "even_header_alignment": None,
+                            "page_number_start": 1,
+                        },
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="????????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="????? ???????", position=Position(page=2, paragraph_index=1))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertIn("page_number_not_centered", subtypes)
+        self.assertIn("page_number_in_header", subtypes)
+        self.assertIn("title_page_number_visible", subtypes)
+        self.assertIn("page_numbering_restart", subtypes)
+
+
+
+    def test_numbered_heading_is_not_flagged_as_invalid_enumeration(self) -> None:
+        document = DocumentInput(
+            document_id="doc_numbered_heading",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "2. ?????????? ? ??????? ?????? ?????????? ???? ???????", "alignment": "left", "style": "Heading 1", "first_line_indent_mm": 0.0},
+                    ],
+                    "section_headings": {
+                        "sec_2": {"paragraph_index": 1, "text": "2. ?????????? ? ??????? ?????? ?????????? ???? ???????", "alignment": "left", "style_name": "Heading 1"}
+                    },
+                },
+            ),
+            sections=[Section(id="sec_2", number="2", title="?????????? ? ??????? ?????? ?????????? ???? ???????")],
+            paragraphs=[],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        self.assertNotIn("invalid_enumeration_marker", [issue.subtype for issue in result.issues])
+
+    def test_docx_enumeration_checks_create_issues(self) -> None:
+        document = DocumentInput(
+            document_id="doc_enumeration",
+            standard_id=self.standard_id,
+            meta=DocumentMeta(
+                filename="report.docx",
+                title="Report",
+                extras={
+                    "source_format": "docx",
+                    "docx_paragraphs": [
+                        {"paragraph_index": 1, "text": "? ?????? ?????", "alignment": "left", "style": "Normal", "first_line_indent_mm": 0.0},
+                        {"paragraph_index": 2, "text": "?) ?????? ?????", "alignment": "left", "style": "Normal", "first_line_indent_mm": 0.0},
+                    ],
+                },
+            ),
+            sections=[Section(id="sec_1", number="1", title="???????? ?????")],
+            paragraphs=[Paragraph(id="p_1", section_id="sec_1", text="? ?????? ?????", position=Position(page=1, paragraph_index=1))],
+        )
+
+        result = analyze_document_against_standard(document, self.standard_id)
+        subtypes = [issue.subtype for issue in result.issues]
+        self.assertIn("invalid_enumeration_marker", subtypes)
+        self.assertIn("enumeration_indent_invalid", subtypes)
 
     def test_docx_invalid_page_size_creates_issue(self) -> None:
         document = DocumentInput(

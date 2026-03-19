@@ -10,8 +10,8 @@ from app.schemas.issue import Issue, SuggestedFix
 from app.utils.text import normalize_whitespace
 
 
-FIGURE_CAPTION_RE = re.compile(r"^(?:\u0420\u0438\u0441\u0443\u043d\u043e\u043a|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$", re.IGNORECASE)
-TABLE_CAPTION_RE = re.compile(r"^\u0422\u0430\u0431\u043b\u0438\u0446\u0430\s+(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$", re.IGNORECASE)
+FIGURE_CAPTION_RE = re.compile(r"^(?:\u0420\u0438\u0441\u0443\u043d\u043e(?:\u043a)?|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$", re.IGNORECASE)
+TABLE_CAPTION_RE = re.compile(r"^(?:\u0422\u0430\u0431\u043b\u0438\u0446(?:\u0430)?)\s+(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$", re.IGNORECASE)
 APPENDIX_RE = re.compile(r"^\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435\s+([\u0410-\u042fA-Z])(?:\s*[\u2014\u2013-]?\s*(.*))?$", re.IGNORECASE)
 
 CONTENT_TYPES = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

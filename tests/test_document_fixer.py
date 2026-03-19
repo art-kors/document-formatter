@@ -1,5 +1,7 @@
 ﻿from io import BytesIO
 from docx import Document as WordDocument
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Mm, Pt, RGBColor
 from pathlib import Path
@@ -14,6 +16,40 @@ from app.schemas.document import DocumentInput
 from app.standards.ingest import StandardIngestor
 from app.standards.registry import StandardRegistry
 from tests.support.fake_provider import FakeProvider
+
+
+def _add_page_field(paragraph) -> None:
+    begin_run = paragraph.add_run()._r
+    fld_begin = OxmlElement('w:fldChar')
+    fld_begin.set(qn('w:fldCharType'), 'begin')
+    begin_run.append(fld_begin)
+
+    instr_run = paragraph.add_run()._r
+    instr = OxmlElement('w:instrText')
+    instr.set(qn('xml:space'), 'preserve')
+    instr.text = ' PAGE '
+    instr_run.append(instr)
+
+    separate_run = paragraph.add_run()._r
+    fld_separate = OxmlElement('w:fldChar')
+    fld_separate.set(qn('w:fldCharType'), 'separate')
+    separate_run.append(fld_separate)
+
+    text_run = paragraph.add_run()._r
+    page_text = OxmlElement('w:t')
+    page_text.text = '1'
+    text_run.append(page_text)
+
+    end_run = paragraph.add_run()._r
+    fld_end = OxmlElement('w:fldChar')
+    fld_end.set(qn('w:fldCharType'), 'end')
+    end_run.append(fld_end)
+
+
+def _paragraph_has_page_field(paragraph) -> bool:
+    xml = getattr(getattr(paragraph, '_p', None), 'xml', '') or ''
+    upper_xml = xml.upper()
+    return 'PAGE' in upper_xml and ('INSTRTEXT' in upper_xml or 'FLDSIMPLE' in upper_xml)
 
 
 class DocumentFixerTests(unittest.TestCase):
@@ -302,6 +338,76 @@ class DocumentFixerTests(unittest.TestCase):
         self.assertEqual(sum(1 for value in texts if 'mc2' in value), 1)
         self.assertEqual(sum(1 for value in texts if 'x1 + x2 + x3' in value), 1)
         self.assertEqual(sum(1 for value in texts if 'Q = a / b' in value), 1)
+
+
+    def test_apply_fixes_to_source_docx_sets_centered_footer_page_number_and_hides_title_page_number(self) -> None:
+        source = WordDocument()
+        section = source.sections[0]
+        footer_paragraph = section.footer.paragraphs[0]
+        footer_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        _add_page_field(footer_paragraph)
+        header_paragraph = section.header.paragraphs[0]
+        _add_page_field(header_paragraph)
+        first_footer_paragraph = section.first_page_footer.paragraphs[0]
+        _add_page_field(first_footer_paragraph)
+        first_header_paragraph = section.first_page_header.paragraphs[0]
+        _add_page_field(first_header_paragraph)
+        source.add_paragraph('1 ????????')
+        source.add_paragraph('????? ???????')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='page_numbering_fix.docx',
+            standard_id='gost_7_32_2017',
+            document_id='page_numbering_fix',
+        )
+        result = self.pipeline.analyze_document(parsed)
+
+        subtypes = {issue.subtype for issue in result.issues}
+        self.assertIn('page_number_not_centered', subtypes)
+        self.assertIn('title_page_number_visible', subtypes)
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+        fixed_section = fixed_doc.sections[0]
+        fixed_footer_paragraph = next(paragraph for paragraph in fixed_section.footer.paragraphs if _paragraph_has_page_field(paragraph))
+
+        self.assertTrue(fixed_section.different_first_page_header_footer)
+        self.assertEqual(fixed_footer_paragraph.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertTrue(_paragraph_has_page_field(fixed_footer_paragraph))
+        self.assertFalse(any(_paragraph_has_page_field(paragraph) for paragraph in fixed_section.first_page_footer.paragraphs))
+        self.assertFalse(any(_paragraph_has_page_field(paragraph) for paragraph in fixed_section.header.paragraphs))
+        self.assertFalse(any(_paragraph_has_page_field(paragraph) for paragraph in fixed_section.first_page_header.paragraphs))
+
+
+    def test_apply_fixes_to_source_docx_normalizes_enumeration_marker_and_indent(self) -> None:
+        source = WordDocument()
+        paragraph = source.add_paragraph('? ?????? ?????')
+        paragraph.paragraph_format.first_line_indent = Mm(0)
+        source.add_paragraph('1 ????????')
+
+        buffer = BytesIO()
+        source.save(buffer)
+        source_bytes = buffer.getvalue()
+
+        parsed = parse_docx_to_document(
+            source_bytes,
+            filename='enumeration_fix.docx',
+            standard_id='gost_7_32_2017',
+            document_id='enumeration_fix',
+        )
+        result = self.pipeline.analyze_document(parsed)
+
+        fixed_bytes = apply_fixes_to_source_docx(source_bytes, parsed, result.issues)
+        fixed_doc = WordDocument(BytesIO(fixed_bytes))
+        fixed_paragraph = fixed_doc.paragraphs[0]
+
+        self.assertEqual(fixed_paragraph.text, '- ?????? ?????')
+        self.assertAlmostEqual(fixed_paragraph.paragraph_format.first_line_indent.mm, 12.5, places=1)
 
     def test_apply_fixes_to_source_docx_updates_typography_and_margins(self) -> None:
         source = WordDocument()

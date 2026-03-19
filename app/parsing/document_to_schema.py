@@ -7,12 +7,12 @@ from app.schemas.document import DocumentInput, DocumentMeta, FigureItem, Paragr
 
 
 SECTION_PATTERN = re.compile(r'^(?P<number>\d+(?:\.\d+)*)\s+(?P<title>[^\n]{1,200})$')
-APPENDIX_PATTERN = re.compile('^(?:\u041f\u0420\u0418\u041b\u041e\u0416\u0415\u041d\u0418\u0415|\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435)\\s+(?P<number>[A-Z\u0410-\u042f\u0401])(?:\\s*[\u2013-]?\\s*(?P<title>.*))?$')
+APPENDIX_PATTERN = re.compile('^(?:\u041f\u0420\u0418\u041b\u041e\u0416\u0415\u041d\u0418\u0415|\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435)\s+(?P<number>[A-Z\u0410-\u042f\u0401])(?:\s*[\u2013-]?\s*(?P<title>.*))?$')
 FIGURE_PATTERN = re.compile(
-    '^(?:\u0420\u0438\u0441\u0443\u043d\u043e\u043a|\u0420\u0438\u0441\\.?|\u0440\u0438\u0441\\.?)\\s*(?P<number>\\d+(?:\\.\\d+)*)\\s*[\u2014\u2013-]?\\s*(?P<title>.*)$',
+    '^(?:\u0420\u0438\u0441\u0443\u043d\u043e(?:\u043a)?|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$',
     re.IGNORECASE,
 )
-TABLE_PATTERN = re.compile('^\u0422\u0430\u0431\u043b\u0438\u0446\u0430\\s+(?P<number>\\d+)\\s*[\u2013-]?\\s*(?P<title>.*)$', re.IGNORECASE)
+TABLE_PATTERN = re.compile('^(?:\u0422\u0430\u0431\u043b\u0438\u0446(?:\u0430)?)\s+(?P<number>\d+(?:\.\d+)*)\s*[\u2013-]?\s*(?P<title>.*)$', re.IGNORECASE)
 _HEADING_STYLE_HINTS = ('heading', '\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043e\u043a')
 
 _CANONICAL_UNNUMBERED_HEADINGS = {
@@ -164,6 +164,7 @@ def parse_docx_to_document(
         'docx_tables_meta': docx_tables_meta,
         'docx_formulas': _extract_docx_formula_meta(doc),
         'docx_sections': _extract_section_page_meta(doc),
+        'docx_page_numbering': _extract_page_numbering_meta(doc),
         'section_headings': section_heading_meta,
         'has_tables': bool(doc.tables),
         'inline_shapes_count': len(getattr(doc, 'inline_shapes', [])),
@@ -282,6 +283,78 @@ def _extract_section_page_meta(doc: Any) -> List[Dict[str, Any]]:
             }
         )
     return section_meta
+
+
+def _extract_page_numbering_meta(doc: Any) -> List[Dict[str, Any]]:
+    numbering_meta: List[Dict[str, Any]] = []
+    for index, section in enumerate(getattr(doc, 'sections', []), start=1):
+        default_footer = _footer_page_field_meta(getattr(section, 'footer', None))
+        first_footer = _footer_page_field_meta(getattr(section, 'first_page_footer', None))
+        even_footer = _footer_page_field_meta(getattr(section, 'even_page_footer', None))
+        default_header = _footer_page_field_meta(getattr(section, 'header', None))
+        first_header = _footer_page_field_meta(getattr(section, 'first_page_header', None))
+        even_header = _footer_page_field_meta(getattr(section, 'even_page_header', None))
+        numbering_meta.append(
+            {
+                'section_index': index,
+                'different_first_page': bool(getattr(section, 'different_first_page_header_footer', False)),
+                'default_footer_has_page_field': default_footer['has_page_field'],
+                'default_footer_alignment': default_footer['alignment'],
+                'first_footer_has_page_field': first_footer['has_page_field'],
+                'first_footer_alignment': first_footer['alignment'],
+                'even_footer_has_page_field': even_footer['has_page_field'],
+                'even_footer_alignment': even_footer['alignment'],
+                'default_header_has_page_field': default_header['has_page_field'],
+                'default_header_alignment': default_header['alignment'],
+                'first_header_has_page_field': first_header['has_page_field'],
+                'first_header_alignment': first_header['alignment'],
+                'even_header_has_page_field': even_header['has_page_field'],
+                'even_header_alignment': even_header['alignment'],
+                'page_number_start': _extract_page_number_start(section),
+            }
+        )
+    return numbering_meta
+
+
+def _footer_page_field_meta(footer: Any) -> Dict[str, Any]:
+    result = {'has_page_field': False, 'alignment': None}
+    if footer is None:
+        return result
+    for paragraph in getattr(footer, 'paragraphs', []) or []:
+        if _paragraph_has_page_field(paragraph):
+            result['has_page_field'] = True
+            result['alignment'] = _alignment_name(paragraph.alignment)
+            return result
+    return result
+
+
+def _paragraph_has_page_field(paragraph: Any) -> bool:
+    paragraph_xml = getattr(getattr(paragraph, '_p', None), 'xml', '') or ''
+    xml = str(paragraph_xml)
+    if not xml:
+        return False
+    upper_xml = xml.upper()
+    return 'PAGE' in upper_xml and ('INSTRTEXT' in upper_xml or 'FLDSIMPLE' in upper_xml)
+
+
+def _extract_page_number_start(section: Any) -> Optional[int]:
+    try:
+        from docx.oxml.ns import qn
+    except Exception:
+        return None
+    sect_pr = getattr(section, '_sectPr', None)
+    if sect_pr is None:
+        return None
+    pg_num_type = sect_pr.find(qn('w:pgNumType'))
+    if pg_num_type is None:
+        return None
+    raw_value = pg_num_type.get(qn('w:start'))
+    if raw_value in (None, ''):
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _emu_to_mm(length: Any) -> Optional[float]:
@@ -468,15 +541,34 @@ def _looks_like_formula_paragraph(text: str) -> bool:
     lowered = normalized.lower()
     if lowered.startswith('где'):
         return False
-    if re.match(r'^[A-Za-zА-Яа-яЁё][^=]{0,40}[—–-]\s*.+$', normalized):
+    if len(normalized) > 220:
         return False
-    if (_extract_formula_number(normalized) or _extract_raw_formula_number(normalized)) and any(symbol in normalized for symbol in ('=', '+', '-', '*', '/')):
+    if not any(symbol in normalized for symbol in ('=', '+', '-', '*', '/', '^')):
+        return False
+    if re.match(r'^\d+(?:\.\d+)*\.?\s+[\u0410-\u042f\u0401A-Z].+$', normalized):
+        return False
+    if re.match(r'^[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u0451][^=]{0,40}[\u2014\u2013-]\s*.+$', normalized):
+        return False
+
+    before, formula, _ = _split_formula_sentence(normalized)
+    if formula and '=' in formula and len(formula) <= 120:
         return True
-    if '=' in normalized and re.search(r'[^\s=]{1,40}\s*=|=\s*[^\s=]', normalized):
-        return True
-    if re.search(r'[A-Za-z]\s*[+\-*/=]', normalized):
-        return True
-    if re.search(r'[0-9A-Za-z)\]]\s*[+\-*/]\s*[0-9A-Za-z(\[]', normalized):
+
+    has_equation_number = bool(_extract_formula_number(normalized) or _extract_raw_formula_number(normalized))
+    if '=' in normalized:
+        left, right = normalized.split('=', 1)
+        left = left.strip()
+        right = right.strip()
+        if not left or not right:
+            return False
+        if len(left) > 40 or len(right) > 80:
+            return False
+        lhs_ok = bool(re.search(r'[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9_)\]]$', left))
+        rhs_ok = bool(re.search(r'[A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u04510-9_(\[]', right) and any(symbol in normalized for symbol in ('=', '+', '-', '*', '/', '^')))
+        if lhs_ok and rhs_ok:
+            return True
+
+    if has_equation_number and re.search(r'[A-Za-z0-9)\]]\s*[+\-*/^]\s*[A-Za-z0-9(\[]', normalized):
         return True
     return False
 

@@ -21,8 +21,8 @@ APPENDIX_WORD = _u("\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435
 GOST_NAME = _u("\u0413\u041e\u0421\u0422 7.32-2017")
 
 FIGURE_CAPTION_PATTERN = re.compile(rf"^{FIGURE_WORD}\s+\d+(?:\.\d+)*\s*[\u2014\u2013-]\s*.+$")
-FIGURE_DETECTION_PATTERN = re.compile(r'^(?:\u0420\u0438\u0441\u0443\u043d\u043e\u043a|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$', re.IGNORECASE)
-TABLE_CAPTION_PATTERN = re.compile(rf"^{TABLE_WORD}\s+\d+(?:\.\d+)*\s*[\u2014\u2013-]\s*.+$")
+FIGURE_DETECTION_PATTERN = re.compile(r'^(?:\u0420\u0438\u0441\u0443\u043d\u043e(?:\u043a)?|\u0420\u0438\u0441\.?|\u0440\u0438\u0441\.?)\s*(?P<number>\d+(?:\.\d+)*)\s*[\u2014\u2013-]?\s*(?P<title>.*)$', re.IGNORECASE)
+TABLE_CAPTION_PATTERN = re.compile(r'^(?:\u0422\u0430\u0431\u043b\u0438\u0446(?:\u0430)?)\s+\d+(?:\.\d+)*\s*[\u2014\u2013-]\s*.+$', re.IGNORECASE)
 APPENDIX_TITLE_PATTERN = re.compile(f"^{APPENDIX_WORD}(?:\\s+[\u0410-\u042fA-Z])?(?:\\s*[-\u2013]\\s*.+|\\s+.+)?$")
 REFERENCE_SECTION_HINTS = [
     _u("\u0441\u043f\u0438\u0441\u043e\u043a \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u043d\u044b\u0445 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432"),
@@ -58,7 +58,9 @@ def analyze_document_against_standard(document: DocumentInput, standard_id: str)
     issues.extend(_check_formulas(document, parsed_standard, standard_id))
     issues.extend(_check_front_matter_and_layout(document, parsed_standard, standard_id))
     issues.extend(_check_page_size(document, parsed_standard, standard_id))
+    issues.extend(_check_page_numbering(document, parsed_standard, standard_id))
     issues.extend(_check_page_layout_and_typography(document, parsed_standard, standard_id))
+    issues.extend(_check_enumerations(document, parsed_standard, standard_id))
     issues.extend(_check_references_section(document, parsed_standard, standard_id))
     issues.extend(_check_headings(document, parsed_standard, standard_id))
     issues.extend(_check_section_numbering(document, parsed_standard, standard_id))
@@ -460,23 +462,50 @@ def _check_front_matter_and_layout(document: DocumentInput, parsed_standard: Par
     issues: List[Issue] = []
     title_rule = _pick_rule(parsed_standard.rules, object_type='title_page', constraint_type='required_presence')
     contents_rule = _pick_rule(parsed_standard.rules, object_type='contents', constraint_type='required_presence')
-    formatting_rule = _pick_rule(parsed_standard.rules, object_type='title_page', constraint_type='formatting')
     paragraph_meta = document.meta.extras.get('docx_paragraphs', []) if document.meta.extras else []
     paragraph_meta = paragraph_meta + (document.meta.extras.get('docx_table_paragraphs', []) if document.meta.extras else [])
     if not _has_contents_block(document, paragraph_meta):
-        issues.append(_build_issue('formatting', 'missing_contents_section', 'warning', _u("\u0412 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0435 \u043e\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043e\u0433\u043b\u0430\u0432\u043b\u0435\u043d\u0438\u0435"), _u("\u041d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d \u0440\u0430\u0437\u0434\u0435\u043b \u0438\u043b\u0438 \u0431\u043b\u043e\u043a \u0441 \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u043e\u043c '\u041e\u0433\u043b\u0430\u0432\u043b\u0435\u043d\u0438\u0435' \u0438\u043b\u0438 '\u0421\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435'."), _fallback_document_location(document), _build_standard_reference(standard_id, contents_rule), _u("\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043e\u0433\u043b\u0430\u0432\u043b\u0435\u043d\u0438\u0435 (\u0441\u043e\u0434\u0435\u0440\u0436\u0430\u043d\u0438\u0435)")))
+        issues.append(
+            _build_issue(
+                'formatting',
+                'missing_contents_section',
+                'warning',
+                _u('Отсутствует оглавление или содержание'),
+                _u("В первых частях документа не найден блок с заголовком 'Оглавление' или 'Содержание'."),
+                _fallback_document_location(document),
+                _build_standard_reference(standard_id, contents_rule),
+                _u('Добавить оглавление (содержание).'),
+            )
+        )
     if paragraph_meta and not _looks_like_title_page(paragraph_meta):
-        issues.append(_build_issue('formatting', 'missing_title_page', 'warning', _u("\u041d\u0435 \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u043d \u0442\u0438\u0442\u0443\u043b\u044c\u043d\u044b\u0439 \u043b\u0438\u0441\u0442 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430"), _u("\u0412 \u043f\u0435\u0440\u0432\u044b\u0445 \u0430\u0431\u0437\u0430\u0446\u0430\u0445 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d \u043d\u0430\u0431\u043e\u0440 \u043f\u0440\u0438\u0437\u043d\u0430\u043a\u043e\u0432 \u0442\u0438\u0442\u0443\u043b\u044c\u043d\u043e\u0433\u043e \u043b\u0438\u0441\u0442\u0430."), IssueLocation(page=1), _build_standard_reference(standard_id, title_rule), _u("\u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0442\u0438\u0442\u0443\u043b\u044c\u043d\u044b\u0439 \u043b\u0438\u0441\u0442")))
+        issues.append(
+            _build_issue(
+                'formatting',
+                'missing_title_page',
+                'warning',
+                _u('Не обнаружен титульный лист'),
+                _u('В первом блоке документа не найдены признаки титульного листа.'),
+                IssueLocation(page=1),
+                _build_standard_reference(standard_id, title_rule),
+                _u('Добавить титульный лист.'),
+            )
+        )
     elif paragraph_meta:
-        signer_lines = [item for item in paragraph_meta[:15] if any(token in item['text'].lower() for token in TITLE_PAGE_RIGHT_HINTS)]
-        if signer_lines and any(item.get('alignment') != 'right' for item in signer_lines):
-            issues.append(_build_issue('formatting', 'title_page_right_alignment', 'info', _u("\u041d\u0430 \u0442\u0438\u0442\u0443\u043b\u044c\u043d\u043e\u043c \u043b\u0438\u0441\u0442\u0435 \u0431\u043b\u043e\u043a\u0438 \u043f\u043e\u0434\u043f\u0438\u0441\u0435\u0439 \u0432\u044b\u0440\u043e\u0432\u043d\u0435\u043d\u044b \u043d\u0435 \u043f\u043e \u043f\u0440\u0430\u0432\u043e\u043c\u0443 \u043a\u0440\u0430\u044e"), _u("\u0421\u0442\u0440\u043e\u043a\u0438 \u0441 \u0434\u0430\u043d\u043d\u044b\u043c\u0438 \u043e\u0431 \u0438\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u0435 \u0438\u043b\u0438 \u0440\u0443\u043a\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u0435 \u043d\u0435 \u0432\u044b\u0440\u043e\u0432\u043d\u0435\u043d\u044b \u043f\u043e \u043f\u0440\u0430\u0432\u043e\u043c\u0443 \u043a\u0440\u0430\u044e."), IssueLocation(page=1), _build_standard_reference(standard_id, formatting_rule or title_rule), _u("\u0412\u044b\u0440\u043e\u0432\u043d\u044f\u0442\u044c \u0438\u0445 \u043f\u043e \u043f\u0440\u0430\u0432\u043e\u043c\u0443 \u043a\u0440\u0430\u044e")))
-        centered_core = [item for item in paragraph_meta[:10] if any(token in item['text'].lower() for token in TITLE_PAGE_CENTER_HINTS)]
-        if centered_core and any(item.get('alignment') != 'center' for item in centered_core):
-            issues.append(_build_issue('formatting', 'title_page_center_alignment', 'info', _u("\u041a\u043b\u044e\u0447\u0435\u0432\u044b\u0435 \u0441\u0442\u0440\u043e\u043a\u0438 \u0442\u0438\u0442\u0443\u043b\u044c\u043d\u043e\u0433\u043e \u043b\u0438\u0441\u0442\u0430 \u043d\u0435 \u043f\u043e \u0446\u0435\u043d\u0442\u0440\u0443"), _u("\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043e\u0442\u0447\u0435\u0442\u0430 \u0438\u043b\u0438 \u0442\u0435\u043c\u0430 \u0440\u0430\u0431\u043e\u0442\u044b \u043d\u0435 \u0438\u043c\u0435\u044e\u0442 \u0446\u0435\u043d\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f."), IssueLocation(page=1), _build_standard_reference(standard_id, formatting_rule or title_rule), _u("\u0412\u044b\u0440\u043e\u0432\u043d\u044f\u0442\u044c \u0438\u0445 \u043f\u043e \u0446\u0435\u043d\u0442\u0440\u0443")))
         body_lines = [item for item in paragraph_meta if len(item['text']) >= 80 and item.get('alignment') not in {'center', 'right'}]
+        formatting_rule = _pick_rule(parsed_standard.rules, object_type='title_page', constraint_type='formatting')
         if body_lines and sum(1 for item in body_lines if item.get('alignment') != 'justify') >= max(3, len(body_lines) // 2):
-            issues.append(_build_issue('formatting', 'body_text_not_justified', 'info', _u("\u041e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0442\u0435\u043a\u0441\u0442 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c \u0432\u044b\u0440\u043e\u0432\u043d\u0435\u043d \u043d\u0435 \u043f\u043e \u0448\u0438\u0440\u0438\u043d\u0435"), _u("\u0411\u043e\u043b\u044c\u0448\u0430\u044f \u0447\u0430\u0441\u0442\u044c \u0434\u043b\u0438\u043d\u043d\u044b\u0445 \u0430\u0431\u0437\u0430\u0446\u0435\u0432 \u043d\u0435 \u0438\u043c\u0435\u0435\u0442 \u0432\u044b\u0440\u0430\u0432\u043d\u0438\u0432\u0430\u043d\u0438\u044f \u043f\u043e \u0448\u0438\u0440\u0438\u043d\u0435."), IssueLocation(page=1), _build_standard_reference(standard_id, formatting_rule), _u("\u0412\u044b\u0440\u043e\u0432\u043d\u044f\u0442\u044c \u0430\u0431\u0437\u0430\u0446\u044b \u043f\u043e \u0448\u0438\u0440\u0438\u043d\u0435")))
+            issues.append(
+                _build_issue(
+                    'formatting',
+                    'body_text_not_justified',
+                    'info',
+                    _u('Основной текст визуально не выровнен по ширине'),
+                    _u('Заметная часть длинных абзацев не имеет выравнивания по ширине.'),
+                    IssueLocation(page=1),
+                    _build_standard_reference(standard_id, formatting_rule),
+                    _u('Выровнять текст по ширине'),
+                )
+            )
     return issues
 
 
@@ -518,6 +547,111 @@ def _check_page_size(document: DocumentInput, parsed_standard: ParsedStandard, s
             _u('Использовать листы формата A4. Для крупных таблиц и иллюстраций допустим формат A3.'),
         )
     ]
+
+
+def _check_page_numbering(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:
+    numbering_meta = document.meta.extras.get('docx_page_numbering', []) if document.meta.extras else []
+    if not numbering_meta:
+        return []
+
+    formatting_rule = _pick_rule(parsed_standard.rules, object_type='report', constraint_type='formatting')
+    if formatting_rule is None:
+        formatting_rule = _pick_rule(parsed_standard.rules, object_type='report')
+
+    issues: List[Issue] = []
+    if not any(item.get('default_footer_has_page_field') for item in numbering_meta):
+        issues.append(
+            _build_issue(
+                'formatting',
+                'missing_page_numbering',
+                'warning',
+                _u('В документе отсутствует автоматическая нумерация страниц'),
+                _u('В нижнем колонтитуле не найдено поле нумерации PAGE.'),
+                IssueLocation(page=1),
+                _build_standard_reference(standard_id, formatting_rule),
+                _u('Добавить нумерацию страниц в нижний колонтитул по центру.'),
+            )
+        )
+        return issues
+
+    not_centered_sections = [
+        item.get('section_index')
+        for item in numbering_meta
+        if item.get('default_footer_has_page_field') and item.get('default_footer_alignment') != 'center'
+    ]
+    if not_centered_sections:
+        issues.append(
+            _build_issue(
+                'formatting',
+                'page_number_not_centered',
+                'warning',
+                _u('Номер страницы должен стоять по центру внизу страницы'),
+                _u('Выравнивание номера не по центру в секциях: ') + ', '.join(str(value) for value in not_centered_sections) + '.',
+                IssueLocation(page=1),
+                _build_standard_reference(standard_id, formatting_rule),
+                _u('Выровнять номер страницы по центру нижнего колонтитула.'),
+            )
+        )
+
+    sections_with_header_numbers = [
+        item.get('section_index')
+        for item in numbering_meta
+        if item.get('default_header_has_page_field') or item.get('first_header_has_page_field') or item.get('even_header_has_page_field')
+    ]
+    if sections_with_header_numbers:
+        issues.append(
+            _build_issue(
+                'formatting',
+                'page_number_in_header',
+                'warning',
+                _u('Номер страницы не должен стоять в верхнем колонтитуле'),
+                _u('Поле PAGE обнаружено в верхнем колонтитуле секций: ') + ', '.join(str(value) for value in sections_with_header_numbers) + '.',
+                IssueLocation(page=1),
+                _build_standard_reference(standard_id, formatting_rule),
+                _u('Убрать номер из верхнего колонтитула и оставить его только в нижнем колонтитуле.'),
+            )
+        )
+
+    first_section = numbering_meta[0]
+    title_page_visible = False
+    if first_section.get('first_footer_has_page_field') or first_section.get('first_header_has_page_field'):
+        title_page_visible = True
+    elif (first_section.get('default_footer_has_page_field') or first_section.get('default_header_has_page_field')) and not first_section.get('different_first_page'):
+        title_page_visible = True
+    if title_page_visible:
+        issues.append(
+            _build_issue(
+                'formatting',
+                'title_page_number_visible',
+                'warning',
+                _u('На титульном листе виден номер страницы'),
+                _u('В первой секции номер страницы видим на титуле.'),
+                IssueLocation(page=1),
+                _build_standard_reference(standard_id, formatting_rule),
+                _u('Убрать номер с титульной страницы, но оставить ее в общей нумерации.'),
+            )
+        )
+
+    restarted_sections = [
+        item.get('section_index')
+        for item in numbering_meta[1:]
+        if item.get('page_number_start') not in (None, 0)
+    ]
+    if restarted_sections:
+        issues.append(
+            _build_issue(
+                'formatting',
+                'page_numbering_restart',
+                'warning',
+                _u('Сквозная нумерация страниц не должна начинаться заново'),
+                _u('Перезапуск нумерации найден в секциях: ') + ', '.join(str(value) for value in restarted_sections) + '.',
+                IssueLocation(page=1),
+                _build_standard_reference(standard_id, formatting_rule),
+                _u('Убрать перезапуск нумерации и оставить единую сквозную нумерацию.'),
+            )
+        )
+
+    return issues
 
 
 def _check_page_layout_and_typography(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:
@@ -689,6 +823,56 @@ def _check_page_layout_and_typography(document: DocumentInput, parsed_standard: 
     return issues
 
 
+def _check_enumerations(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:
+    paragraph_meta = document.meta.extras.get('docx_paragraphs', []) if document.meta.extras else []
+    if not paragraph_meta:
+        return []
+
+    formatting_rule = _pick_rule(parsed_standard.rules, object_type='report', constraint_type='formatting')
+    section_heading_indexes = {
+        payload.get('paragraph_index')
+        for payload in (document.meta.extras.get('section_headings', {}) or {}).values()
+        if payload.get('paragraph_index') is not None
+    }
+    issues: List[Issue] = []
+    for item in paragraph_meta:
+        text = normalize_whitespace(str(item.get('text', '')))
+        if not text:
+            continue
+        paragraph_index = item.get('paragraph_index')
+        if paragraph_index in section_heading_indexes:
+            continue
+        if _looks_like_invalid_enumeration_marker(text):
+            issues.append(
+                _build_issue(
+                    'formatting',
+                    'invalid_enumeration_marker',
+                    'warning',
+                    _u('?????? ???????????? ???????? ?? ?? ?????'),
+                    _u('????? ?????????? ? ????????????? ??????? ????????????: ') + text + '.',
+                    IssueLocation(paragraph_index=paragraph_index),
+                    _build_standard_reference(standard_id, formatting_rule),
+                    _u('???????????? ????, ????? ???????? ???????? ?? ??????? ??? ???????? ????? ?? ???????.'),
+                )
+            )
+        elif _looks_like_enumeration_item(text):
+            indent = item.get('first_line_indent_mm')
+            if indent is not None and abs(float(indent) - 12.5) > 1.5:
+                issues.append(
+                    _build_issue(
+                        'formatting',
+                        'enumeration_indent_invalid',
+                        'info',
+                        _u('??????? ???????????? ?????? ?????????? ? ????????? ???????'),
+                        _u('? ???????? ???????????? ???????? ???????? ??????: ') + f'{float(indent):.1f} ??.',
+                        IssueLocation(paragraph_index=paragraph_index),
+                        _build_standard_reference(standard_id, formatting_rule),
+                        _u('?????????? ???????? ?????? 1,25 ?? ??? ???????? ????????????.'),
+                    )
+                )
+    return issues
+
+
 def _check_references_section(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:
     reference_rule = _pick_rule(parsed_standard.rules, object_type='references', constraint_type='required_presence')
     formatting_rule = _pick_rule(parsed_standard.rules, object_type='references', constraint_type='formatting')
@@ -700,6 +884,25 @@ def _check_references_section(document: DocumentInput, parsed_standard: ParsedSt
     if len(normalize_whitespace(reference_section.text)) < 20:
         return [_build_issue('formatting', 'empty_references_section', 'warning', _u("\u0420\u0430\u0437\u0434\u0435\u043b \u0441\u043e \u0441\u043f\u0438\u0441\u043a\u043e\u043c \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432 \u0432\u044b\u0433\u043b\u044f\u0434\u0438\u0442 \u043f\u0443\u0441\u0442\u044b\u043c"), _u("\u0420\u0430\u0437\u0434\u0435\u043b '") + reference_section.title + _u("' \u043d\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u0441\u043f\u0438\u0441\u043a\u0430 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u043e\u0432."), IssueLocation(section_id=reference_section.id), _build_standard_reference(standard_id, formatting_rule or reference_rule), _u("\u0417\u0430\u043f\u043e\u043b\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u0434\u0435\u043b \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0430\u043c\u0438"))]
     return []
+
+
+def _looks_like_invalid_enumeration_marker(text: str) -> bool:
+    normalized = normalize_whitespace(text)
+    if _looks_like_heading_like_numbered_line(normalized):
+        return False
+    return bool(re.match(r'^(?:[????]|\d+\.|[A-Za-z?-??-???]\.)\s+', normalized))
+
+
+def _looks_like_enumeration_item(text: str) -> bool:
+    normalized = normalize_whitespace(text)
+    if _looks_like_heading_like_numbered_line(normalized):
+        return False
+    return bool(re.match(r'^(?:[-??]|\d+\)|[?-??]\))\s+', normalized, re.IGNORECASE))
+
+
+def _looks_like_heading_like_numbered_line(text: str) -> bool:
+    normalized = normalize_whitespace(text)
+    return bool(re.match(r'^\d+(?:\.\d+)*\.?\s+[?-??A-Z].+$', normalized))
 
 
 def _check_headings(document: DocumentInput, parsed_standard: ParsedStandard, standard_id: str) -> List[Issue]:

@@ -58,6 +58,8 @@ def apply_fixes_to_source_docx(file_bytes: bytes, document: DocumentInput, issue
     _apply_alignment_fixes(source, document, issues)
     _apply_heading_layout_fixes(source, document, fixed, issues)
     _apply_typography_and_margin_fixes(source, document, issues)
+    _apply_enumeration_fixes(source, document, issues)
+    _apply_page_numbering_fixes(source, issues)
 
     # 3. Update captions that already exist in the document.
     for old_item, new_item in zip(document.figures, fixed.figures):
@@ -766,6 +768,157 @@ def _collect_heading_paragraphs_for_typography_fix(source_doc, parsed_document: 
     return paragraphs
 
 
+def _apply_enumeration_fixes(source_doc, parsed_document: DocumentInput, issues: List[Issue]) -> None:
+    relevant = {'invalid_enumeration_marker', 'enumeration_indent_invalid'}
+    if not any(issue.subtype in relevant for issue in issues):
+        return
+
+    for issue in issues:
+        if issue.subtype not in relevant:
+            continue
+        paragraph = _find_paragraph_for_issue(source_doc, parsed_document, issue)
+        if paragraph is None or _paragraph_contains_drawing(paragraph):
+            continue
+        text = normalize_whitespace(paragraph.text)
+        if issue.subtype == 'invalid_enumeration_marker':
+            normalized = _normalize_enumeration_marker(text)
+            if normalized != text:
+                _replace_paragraph_text(paragraph, normalized)
+        if issue.subtype in {'invalid_enumeration_marker', 'enumeration_indent_invalid'}:
+            paragraph.paragraph_format.first_line_indent = Mm(12.5)
+
+
+def _apply_page_numbering_fixes(source_doc, issues: List[Issue]) -> None:
+    relevant_subtypes = {
+        'missing_page_numbering',
+        'page_number_not_centered',
+        'title_page_number_visible',
+        'page_numbering_restart',
+    }
+    if not any(issue.subtype in relevant_subtypes for issue in issues):
+        return
+
+    for index, section in enumerate(getattr(source_doc, 'sections', []), start=1):
+        footer = getattr(section, 'footer', None)
+        first_footer = getattr(section, 'first_page_footer', None)
+        header = getattr(section, 'header', None)
+        first_header = getattr(section, 'first_page_header', None)
+        even_header = getattr(section, 'even_page_header', None)
+
+        for region in (footer, first_footer, header, first_header, even_header):
+            if region is None:
+                continue
+            try:
+                region.is_linked_to_previous = False
+            except Exception:
+                pass
+
+        if index == 1:
+            try:
+                section.different_first_page_header_footer = True
+            except Exception:
+                pass
+            if first_footer is not None:
+                _remove_footer_page_fields(first_footer)
+            if first_header is not None:
+                _remove_footer_page_fields(first_header)
+
+        if header is not None:
+            _remove_footer_page_fields(header)
+        if even_header is not None:
+            _remove_footer_page_fields(even_header)
+
+        _remove_page_number_restart(section)
+        if footer is not None:
+            _ensure_centered_footer_page_field(footer)
+
+
+def _remove_footer_page_fields(footer) -> None:
+    for paragraph in getattr(footer, 'paragraphs', []) or []:
+        if _paragraph_has_page_field(paragraph):
+            _replace_paragraph_text(paragraph, '')
+            paragraph.alignment = None
+
+
+def _ensure_centered_footer_page_field(footer) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    paragraph = _find_footer_page_paragraph(footer)
+    if paragraph is None:
+        paragraphs = list(getattr(footer, 'paragraphs', []) or [])
+        paragraph = paragraphs[0] if paragraphs else footer.add_paragraph()
+    for candidate in getattr(footer, 'paragraphs', []) or []:
+        if candidate is paragraph:
+            continue
+        if _paragraph_has_page_field(candidate):
+            _replace_paragraph_text(candidate, '')
+    _replace_paragraph_with_page_field(paragraph)
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+def _find_footer_page_paragraph(footer):
+    for paragraph in getattr(footer, 'paragraphs', []) or []:
+        if _paragraph_has_page_field(paragraph):
+            return paragraph
+    return None
+
+
+def _paragraph_has_page_field(paragraph) -> bool:
+    xml = getattr(getattr(paragraph, '_p', None), 'xml', '') or ''
+    upper_xml = xml.upper()
+    return 'PAGE' in upper_xml and ('INSTRTEXT' in upper_xml or 'FLDSIMPLE' in upper_xml)
+
+
+def _replace_paragraph_with_page_field(paragraph) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    p = paragraph._p
+    for child in list(p):
+        if child.tag.endswith('}pPr'):
+            continue
+        p.remove(child)
+
+    begin_run = paragraph.add_run()._r
+    fld_begin = OxmlElement('w:fldChar')
+    fld_begin.set(qn('w:fldCharType'), 'begin')
+    begin_run.append(fld_begin)
+
+    instr_run = paragraph.add_run()._r
+    instr = OxmlElement('w:instrText')
+    instr.set(qn('xml:space'), 'preserve')
+    instr.text = ' PAGE '
+    instr_run.append(instr)
+
+    separate_run = paragraph.add_run()._r
+    fld_separate = OxmlElement('w:fldChar')
+    fld_separate.set(qn('w:fldCharType'), 'separate')
+    separate_run.append(fld_separate)
+
+    text_run = paragraph.add_run()._r
+    page_text = OxmlElement('w:t')
+    page_text.text = '1'
+    text_run.append(page_text)
+
+    end_run = paragraph.add_run()._r
+    fld_end = OxmlElement('w:fldChar')
+    fld_end.set(qn('w:fldCharType'), 'end')
+    end_run.append(fld_end)
+
+
+def _remove_page_number_restart(section) -> None:
+    try:
+        from docx.oxml.ns import qn
+    except Exception:
+        return
+    sect_pr = getattr(section, '_sectPr', None)
+    if sect_pr is None:
+        return
+    pg_num_type = sect_pr.find(qn('w:pgNumType'))
+    if pg_num_type is not None:
+        sect_pr.remove(pg_num_type)
+
+
 def _apply_alignment_fixes(source_doc, parsed_document: DocumentInput, issues: List[Issue]) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
@@ -811,6 +964,14 @@ def _find_figure_caption_for_issue(document: DocumentInput, issue: Issue) -> Opt
     if document.figures:
         return document.figures[0].caption or None
     return None
+
+
+def _normalize_enumeration_marker(text: str) -> str:
+    normalized = normalize_whitespace(text)
+    normalized = re.sub(r'^(?:[????])\s+', '- ', normalized)
+    normalized = re.sub(r'^(\d+)\.\s+', r'\1) ', normalized)
+    normalized = re.sub(r'^([A-Za-z?-??-???])\.\s+', r'\1) ', normalized)
+    return normalized
 
 
 def _replace_first(source: str, before: str, after: str) -> str:
