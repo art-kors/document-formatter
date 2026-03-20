@@ -1,0 +1,54 @@
+﻿{
+  "document_id": "demo_table_and_refs",
+  "standard_id": "gost_7_32_2017",
+  "meta": {
+    "filename": "demo_table_and_refs.docx",
+    "title": "Демо: таблица и источники",
+    "language": "ru"
+  },
+  "sections": [
+    {
+      "id": "sec_1",
+      "number": "1",
+      "title": "Введение",
+      "level": 1,
+      "text": "Во введении кратко описана цель работы."
+    },
+    {
+      "id": "sec_2",
+      "number": "2",
+      "title": "Результаты",
+      "level": 1,
+      "text": "В разделе собраны итоговые показатели."
+    },
+    {
+      "id": "sec_3",
+      "number": "",
+      "title": "Обсуждение",
+      "level": 1,
+      "text": "Раздел вынесен без номера и без списка источников в конце документа."
+    }
+  ],
+  "paragraphs": [
+    {
+      "id": "p_1",
+      "section_id": "sec_2",
+      "text": "Данные сведены в сводную таблицу результатов.",
+      "position": {
+        "page": 2,
+        "paragraph_index": 3
+      }
+    }
+  ],
+  "tables": [
+    {
+      "id": "tbl_1",
+      "caption": "Таблица сравнения методов",
+      "position": {
+        "page": 3,
+        "paragraph_index": null
+      }
+    }
+  ],
+  "figures": []
+}
