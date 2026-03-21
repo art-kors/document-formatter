@@ -12,16 +12,15 @@
 <h3 align="center">Document Formatter on Agent System</h3>
 
   <p align="center">
-    An intelligent document processing system that uses RAG (Retrieval-Augmented Generation) and Knowledge Graphs to validate and format documents based on custom instructions.
+    An intelligent document processing system that uses IndexRAG to validate and format documents based on custom instructions.
     <br />
-    <a href="https://github.com/your_username/document-formatter"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/N0maD/document-formatter"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/your_username/document-formatter">View Demo</a>
     ·
-    <a href="https://github.com/your_username/document-formatter/issues">Report Bug</a>
+    <a href="https://github.com/N0maD/document-formatter/issues">Report Bug</a>
     ·
-    <a href="https://github.com/your_username/document-formatter/issues">Request Feature</a>
+    <a href="https://github.com/N0maD/document-formatter/issues">Request Feature</a>
   </p>
 </div>
 
@@ -50,14 +49,14 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-This project is an intelligent agent system designed to automate the processing and validation of formal documents. Unlike simple rule-based checkers, this system utilizes a **GraphRAG (Graph Retrieval-Augmented Generation)** architecture.
+This project is an intelligent agent system designed to automate the processing and validation of formal documents. Unlike simple rule-based checkers, this system utilizes a [IndexRAG](https://arxiv.org/abs/2603.16415) architecture.
 
 It parses instruction documents (guidelines, GOST standards, etc.), constructs a Knowledge Graph to understand relationships between sections and rules, and indexes content into a Vector Database for semantic search. Users can then query the system to check if their documents meet specific requirements.
 
 **Key Features:**
-*   **Hybrid RAG Engine**: Combines Vector Search (ChromaDB) and Graph Search (NetworkX) for context-aware retrieval.
-*   **LLM Powered**: Uses Mistral AI for entity extraction, embedding generation, and answer synthesis.
-*   **Multi-format Support**: Parses PDF, DOCX, and TXT files using LlamaIndex readers.
+*   **IndexRAG**: using idea from this paper[].
+*   **LLM Powered**: Uses Mistral AI(or Qwen2.5 for local mode) for entity extraction, embedding generation, and answer synthesis.
+*   **Format Support**: DOCX is a main format.
 *   **Interactive UI**: Built-in FastAPI backend with a responsive HTML/JS frontend for real-time chat and processing.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -114,15 +113,15 @@ The workflow consists of two main stages: **Indexing** and **Querying**.
 
 1.  **Upload Files**:
     *   Select your **Document** (the work you want to check, e.g., a thesis draft).
-    *   Select your **Instruction** (the rule set, e.g., formatting guidelines PDF).
-    *   Click **"Генерировать"** (Generate). The system will parse the instruction, build the Knowledge Graph, and index it.
+    *   Select your **Instruction** (the rule set).
+    *   Click **"Генерировать"** (Generate).
 
 2.  **Chat with the System**:
-    *   Once processing is complete, the chat interface will appear.
-    *   Ask questions like "Какие требования к списку литературы?" (What are the requirements for the bibliography?) or "Как оформлять заголовки?" (How to format headers?).
+    *   Once processing is complete, the report interface will appear.
+    *   Check traceback with explanations.
     *   The system retrieves relevant rules from the graph and generates a precise answer.
 
-_For more examples, please refer to the [Documentation](https://example.com)_
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -132,11 +131,12 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 - [x] Basic RAG Pipeline with Mistral AI
 - [x] Knowledge Graph Integration (NetworkX)
 - [x] UI for File Upload and Chat
-- [ ] Add support for image-based PDFs (OCR)
+- [x] Add support for image-based docs
 - [ ] User authentication and history saving
 - [ ] Export validation report to PDF
-- [ ] Structure Agent
-- [ ] auto-apply changes
+- [x] Structure Agent
+- [x] Logic Agent 
+- [x] auto-apply changes
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -160,7 +160,7 @@ If you have a suggestion that would make this better, please fork the repo and c
 
 Artemii Korsaev - [@AK_N0maD](https://t.me/AK_N0maD) - art.kors@yandex.ru
 
-Project Link: [https://github.com/art-kors/StyleGAN-NADA](https://github.com/art-kors/StyleGAN-NADA)
+Project Link: [Document Formatter](https://github.com/art-kors/document-formatter)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -169,7 +169,9 @@ Project Link: [https://github.com/art-kors/StyleGAN-NADA](https://github.com/art
 
 *   [Deep Learning School](https://dls.samcs.ru/)
 *   [Artem Katsnelson](https://www.hse.ru/staff/akatsnelson/)
-*   [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
+*   Alexander Gavrilov
+*   [Zhenghua Bao](https://www.semanticscholar.org/author/Zhenghua-Bao/2405433579)
+*   [Yi Shi](https://www.semanticscholar.org/author/Yidong-Shi/2204885006)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
